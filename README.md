@@ -85,7 +85,7 @@ Edit `config.json` :
 
 ## WebSocket Auth (Device Side)
 
-After connecting, the device must send a JSON auth message within 10 seconds:
+After connecting, the device must send a JSON auth message within 5 seconds:
 
 ```json
 { "token": "<device_token>", "device": "speaker" }
