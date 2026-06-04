@@ -66,12 +66,12 @@ Edit `config.json` :
 {
   "producers": {
     "<producer_token>": { "targets": "*" },
-    "<ui_token>": { "targets": ["speaker"] },
-    "<display_token>": { "targets": ["epaper"] }
+    "<producer_speaker_token>": { "targets": ["speaker"] },
+    "<producer_epaper_token>": { "targets": ["epaper"] }
   },
   "devices": {
-    "speaker": { "token": "<speaker_token>" },
-    "epaper":  { "token": "<epaper_token>" }
+    "speaker": { "token": "<producer_speaker_token>" },
+    "epaper":  { "token": "<producer_epaper_token>" }
   }
 }
 ```
