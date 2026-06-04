@@ -3,19 +3,19 @@
     "REPLACE_WITH_PRODUCER_TOKEN": {
       "targets": "*"
     },
-    "REPLACE_WITH_UI_TOKEN": {
+    "REPLACE_WITH_PRODUCER_SPEAKER_TOKEN": {
       "targets": ["speaker"]
     },
-    "REPLACE_WITH_DISPLAY_TOKEN": {
+    "REPLACE_WITH_PRODUCER_EPAPER_TOKEN": {
       "targets": ["epaper"]
     }
   },
   "devices": {
     "speaker": {
-      "token": "REPLACE_WITH_SPEAKER_TOKEN"
+      "token": "REPLACE_WITH_PRODUCER_SPEAKER_TOKEN"
     },
     "epaper": {
-      "token": "REPLACE_WITH_EPAPER_TOKEN"
+      "token": "REPLACE_WITH_PRODUCER_EPAPER_TOKEN"
     }
   }
 }
