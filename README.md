@@ -27,13 +27,31 @@ A lightweight FastAPI + WebSocket server that routes messages from producers to 
 
 ## Installation
 
+### Manual Installation
+
 ```bash
-# 1. Fill in your tokens
+# 1. get source
+git clone https://github.com/laonan/pinepi-broadcast-mid.git
+cd pinepi-broadcast-mid
+
+# 2. Fill in your tokens
 cp config.json.example config.json
 nano config.json
 
-# 2. Install (requires root, Debian/Ubuntu)
+# 3. Install (requires root, Debian/Ubuntu)
 sudo bash install.sh
+```
+
+
+### Quick Install Script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/laonan/pinepi-broadcast-mid/main/install.sh | sudo bash
+
+# After installation:
+cp /etc/pinepi-broadcast-mid/config.json.example /etc/pinepi-broadcast-mid/config.json
+nano /etc/pinepi-broadcast-mid/config.json
+sudo systemctl restart pinepi-broadcast-mid
 ```
 
 The script installs to `/opt/pinepi-broadcast-mid`, creates a Python venv, installs dependencies, and registers a systemd service (`pinepi-broadcast-mid`).
@@ -42,7 +60,7 @@ The script installs to `/opt/pinepi-broadcast-mid`, creates a Python venv, insta
 
 ## Configuration
 
-Edit `config.json` before installing:
+Edit `config.json` :
 
 ```json
 {
@@ -260,6 +278,15 @@ ws.onmessage = (e) => {
   }
 };
 ```
+
+### Web Demo (Optional)
+
+The `web/` directory contains a lightweight static web console for testing and demonstration.
+
+- No backend required
+- Runs directly in browser
+- Stores credentials in browser localStorage
+- Useful for quick prototyping and debugging device messaging
 
 ---
 

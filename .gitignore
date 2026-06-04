@@ -5,3 +5,4 @@ config.json
 venv/
 .env
 .DS_Store
+upload.sh
