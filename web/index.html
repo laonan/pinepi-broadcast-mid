@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#4a90d9">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+<title>Message Broadcast</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-card: #f7f8fa;
+  --text: #1a1a1a;
+  --text-secondary: #666666;
+  --border: #e0e0e0;
+  --primary: #4a90d9;
+  --primary-hover: #3a7bc8;
+  --input-bg: #ffffff;
+  --success-bg: #e8f5e9;
+  --success-text: #2e7d32;
+  --error-bg: #fce4ec;
+  --error-text: #c62828;
+  --toggle-bg: #e0e0e0;
+}
+
+[data-theme="dark"] {
+  --bg: #1a1a2e;
+  --bg-card: #16213e;
+  --text: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --border: #2a2a4a;
+  --primary: #5a9fd9;
+  --primary-hover: #4a8fc9;
+  --input-bg: #1e2a45;
+  --success-bg: #1b3a1b;
+  --success-text: #66bb6a;
+  --error-bg: #3a1a1a;
+  --error-text: #ef9a9a;
+  --toggle-bg: #2a2a4a;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 16px;
+  transition: background 0.3s, color 0.3s;
+}
+
+.container {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+h1 { font-size: 1.4rem; font-weight: 600; }
+
+.theme-switcher {
+  display: flex;
+  gap: 4px;
+  background: var(--toggle-bg);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.theme-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.theme-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--text-secondary);
+  display: block;
+  transition: fill 0.2s;
+}
+
+.theme-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.theme-btn.active svg {
+  fill: #fff;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.form-group { margin-bottom: 16px; }
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+input[type="text"], textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  outline: none;
+}
+
+input[type="text"]:focus, textarea:focus {
+  border-color: var(--primary);
+}
+
+textarea { resize: vertical; min-height: 80px; }
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toggle {
+  position: relative;
+  width: 48px;
+  height: 26px;
+}
+
+.toggle input { opacity: 0; width: 0; height: 0; }
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--toggle-bg);
+  border-radius: 13px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.3s;
+}
+
+.toggle input:checked + .toggle-slider {
+  background: var(--primary);
+}
+
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(22px);
+}
+
+.btn-send {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.btn-send:hover { background: var(--primary-hover); }
+.btn-send:active { transform: scale(0.98); }
+.btn-send:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.status {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  display: none;
+}
+
+.status.success { display: block; background: var(--success-bg); color: var(--success-text); }
+.status.error { display: block; background: var(--error-bg); color: var(--error-text); }
+
+.settings-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.settings-fields { display: none; }
+.settings-fields.open { display: block; }
+
+.history-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.history-item:hover { opacity: 0.7; }
+.history-item:last-child { border-bottom: none; }
+.history-title { font-size: 0.9rem; font-weight: 500; }
+.history-content { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-empty { font-size: 0.85rem; color: var(--text-secondary); text-align: center; padding: 12px; }
+
+.btn-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+.btn-clear:hover { background: var(--error-bg); color: var(--error-text); }
+
+.img-preview-wrap {
+  margin-top: 10px;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.img-preview-wrap.visible { display: flex; }
+.img-preview {
+  width: 250px;
+  height: 122px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  image-rendering: pixelated;
+  background: #fff;
+}
+.img-preview-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.file-input-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  transition: border-color 0.2s;
+}
+.file-input-label:hover { border-color: var(--primary); color: var(--primary); }
+#imgFile { display: none; }
+
+/* Image Crop Dialog (custom styles, not Cropper.js) */
+.img-crop-dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.img-crop-dialog.open { display: flex; }
+.img-crop-box {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+[data-theme="dark"] .img-crop-box {
+  background: #1e2a45;
+}
+.img-crop-preview {
+  max-width: 80vw;
+  max-height: 60vh;
+  overflow: hidden;
+  background: #f0f0f0;
+  border-radius: 8px;
+}
+.img-crop-preview img {
+  max-width: 100%;
+  max-height: 60vh;
+  display: block;
+}
+.img-crop-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.img-crop-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.img-crop-btn-secondary {
+  background: #e0e0e0;
+  color: #333;
+}
+[data-theme="dark"] .img-crop-btn-secondary {
+  background: #2a2a4a;
+  color: #e0e0e0;
+}
+.img-crop-btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.img-crop-btn:hover { opacity: 0.9; }
+.img-crop-hint {
+  font-size: 0.8rem;
+  color: #666;
+  text-align: center;
+}
+[data-theme="dark"] .img-crop-hint {
+  color: #a0a0a0;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1><svg t="1777625618718" class="icon" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2610" width="24" height="24"><path d="M653.497915 64.055188l10.946032 0c42.083123 6.345019 29.709087 69.822205 29.709087 125.106367l0 647.412897c0 54.368159 11.695034 115.040337-26.585078 121.977357-23.251068 4.209012-43.091126-15.009044-59.425174-26.585078-101.228297-71.74421-195.197572-137.016401-297.12087-209.551614-14.398042-10.24603-38.739113-24.097071-39.096115-45.349133-0.308001-18.142053 14.657043-35.556104 34.402101-35.967105 16.97005-0.353001 31.147091 14.696043 43.789128 23.456069 89.916263 62.337183 191.878562 130.400382 278.356815 190.782559L628.473841 170.398499c-89.011261 60.172176-178.564523 129.017378-270.539793 197.035577-13.395039 9.910029-29.050085 23.497069-40.655119 26.587078-27.28508 7.264021-61.41818 1.564005-92.26327 1.564005l-92.26727 0c-3.648011 73.498215-0.519002 153.774451-1.561005 229.878673 41.565122-1.637005 78.50623-2.996009 79.752234 32.839096 0.313001 9.029026-4.365013 25.983076-18.768055 32.838096-18.842055 8.971026-102.3243 5.504016-114.155334-3.129009-7.450022-5.432016-11.020032-15.562046-14.075041-25.021073L63.941187 359.611054c6.184018-43.603128 78.916231-31.274092 125.106367-31.274092 29.978088 0 79.165232 6.91402 106.338312 0 12.495037-3.183009 29.797087-22.092065 43.784128-32.843096C416.45622 236.118692 486.924427 186.130545 561.235644 129.73238 587.522721 109.780322 624.65383 76.596224 653.497915 64.055188L653.497915 64.055188zM653.497915 64.055188" fill="#272636" p-id="2611"></path><path d="M960.005813 287.676843l0 10.951032c-12.520037 26.449077-42.616125 31.264092-75.06422 43.784128-21.936064 8.463025-42.909126 23.310068-64.117188 20.32806-14.310042-2.009006-27.22608-16.807049-26.585078-31.274092 1.129003-25.485075 37.927111-32.922096 60.988179-42.225124 36.285106-14.638043 89.100261-46.953138 104.773307-1.564005L960.005813 287.676843zM960.005813 287.676843" fill="#272636" p-id="2612"></path><path d="M960.005813 489.410434l0 12.510037c-7.822023 34.458101-46.117135 26.587078-86.010252 26.587078-22.992067 0-44.689131 3.637011-59.423174-1.564005-32.101094-11.338033-22.430066-56.403165 1.565005-64.118188 13.044038-4.194012 33.753099-1.564005 59.423174-1.564005C919.614694 461.261351 953.301793 455.380334 960.005813 489.410434L960.005813 489.410434zM960.005813 489.410434" fill="#272636" p-id="2613"></path><path d="M960.005813 713.033089l0 15.639046c-12.090035 57.95317-70.956208 15.518045-100.085293 0-22.293065-11.875035-51.416151-20.269059-60.988179-40.660119-12.066035-25.690075 2.498007-58.446171 26.585078-59.420174 19.130056-0.777002 45.858134 18.666055 60.988179 26.582078C919.799695 672.600971 948.261778 680.330993 960.005813 713.033089L960.005813 713.033089zM960.005813 713.033089" fill="#272636" p-id="2614"></path></svg> Message Push</h1>
+    <div class="theme-switcher">
+      <button class="theme-btn" data-theme="light" title="Light">
+        <svg viewBox="0 0 24 24"><path d="M12 7a5 5 0 100 10 5 5 0 000-10zm0-3a1 1 0 001-1V1a1 1 0 00-2 0v2a1 1 0 001 1zm0 16a1 1 0 00-1 1v2a1 1 0 002 0v-2a1 1 0 00-1-1zm9-9h-2a1 1 0 000 2h2a1 1 0 000-2zM5 11H3a1 1 0 000 2h2a1 1 0 000-2zm14.07-6.49l-1.41 1.41a1 1 0 001.41 1.42l1.42-1.42a1 1 0 00-1.42-1.41zM5.34 17.07l-1.41 1.42a1 1 0 101.41 1.41l1.42-1.41a1 1 0 00-1.42-1.42zm12.73 0a1 1 0 00-1.41 1.42l1.41 1.41a1 1 0 001.42-1.41l-1.42-1.42zM5.34 6.93a1 1 0 001.42-1.42L5.34 4.1a1 1 0 10-1.41 1.41l1.41 1.42z"></path></svg>
+      </button>
+      <button class="theme-btn" data-theme="auto" title="Auto">
+        <svg viewBox="0 0 24 24"><path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-2V4a8 8 0 100 16z"></path></svg>
+      </button>
+      <button class="theme-btn" data-theme="dark" title="Dark">
+        <svg viewBox="0 0 24 24"><path d="M12.1 22c-5.5 0-10-4.5-10-10 0-4.8 3.4-8.8 8.1-9.8.4-.1.9 0 1.2.3.3.3.4.8.2 1.2-.7 1.5-1 3.1-1 4.8 0 5.5 4.5 10 10 10 .3 0 .5 0 .8 0 .5-.1.9.1 1.2.4.3.3.3.8.1 1.2C21.3 19.5 17 22 12.1 22z"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Settings -->
+  <div class="card">
+    <button class="settings-toggle" id="settingsToggle">
+        <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M209.92 0v225.28c-10.24-10.24-20.48-10.24-35.84-10.24s-25.6 0-40.96 10.24V0h76.8z m0 384v640h-76.8V384c10.24 5.12 25.6 10.24 40.96 10.24s25.6-5.12 35.84-10.24zM537.6 0v645.12c-10.24-5.12-25.6-10.24-40.96-10.24s-20.48 0-35.84 10.24V0h76.8z m0 803.84V1024h-76.8V803.84c25.6 10.24 51.2 10.24 76.8 0zM865.28 0v343.04c-10.24-5.12-25.6-10.24-40.96-10.24s-25.6 5.12-40.96 10.24V0h81.92z m-35.84 517.12c15.36 0 25.6-5.12 40.96-10.24V1024h-76.8V506.88c5.12 5.12 20.48 10.24 35.84 10.24z"></path><path d="M209.92 143.36c-10.24-5.12-25.6-5.12-35.84-5.12s-25.6 0-40.96 5.12c-71.68 15.36-128 81.92-128 158.72s56.32 143.36 128 163.84c10.24 5.12 25.6 5.12 40.96 5.12s25.6 0 40.96-5.12c71.68-15.36 128-81.92 128-163.84-5.12-76.8-56.32-143.36-133.12-158.72z m0 240.64c-10.24 5.12-20.48 10.24-35.84 10.24s-25.6-5.12-40.96-10.24c-30.72-15.36-51.2-46.08-51.2-81.92s20.48-66.56 51.2-81.92c10.24-5.12 25.6-10.24 40.96-10.24s25.6 5.12 40.96 10.24c30.72 15.36 51.2 46.08 51.2 81.92-5.12 35.84-25.6 66.56-56.32 81.92z"></path><path d="M619.52 604.16c-20.48-20.48-51.2-35.84-76.8-46.08-25.6-5.12-51.2-5.12-76.8 0-30.72 5.12-56.32 20.48-76.8 46.08-66.56 66.56-66.56 168.96 0 235.52 20.48 25.6 51.2 35.84 76.8 46.08 10.24 5.12 25.6 5.12 40.96 5.12s25.6 0 40.96-5.12c30.72-5.12 56.32-20.48 76.8-46.08 56.32-61.44 56.32-168.96-5.12-235.52zM563.2 788.48c-10.24 10.24-15.36 15.36-25.6 15.36-25.6 10.24-51.2 10.24-76.8 0-10.24-5.12-15.36-10.24-25.6-15.36-35.84-35.84-35.84-92.16 0-128 5.12-5.12 15.36-15.36 25.6-15.36 10.24-5.12 25.6-10.24 40.96-10.24s25.6 5.12 40.96 10.24c10.24 5.12 15.36 10.24 25.6 15.36 30.72 35.84 30.72 92.16-5.12 128z"></path><path d="M865.28 266.24c-10.24-5.12-25.6-5.12-40.96-5.12s-25.6 0-40.96 5.12c-71.68 15.36-128 81.92-128 163.84 0 76.8 56.32 143.36 128 163.84 10.24 5.12 25.6 5.12 40.96 5.12s25.6 0 40.96-5.12c71.68-15.36 128-81.92 128-163.84s-56.32-148.48-128-163.84z m0 240.64c-10.24 5.12-25.6 10.24-40.96 10.24s-25.6-5.12-40.96-10.24c-30.72-15.36-51.2-46.08-51.2-81.92s20.48-66.56 51.2-81.92c10.24-5.12 25.6-10.24 40.96-10.24s25.6 5.12 40.96 10.24c30.72 15.36 51.2 46.08 51.2 81.92s-20.48 66.56-51.2 81.92z"></path></svg>
+        <span class="settings-label">Connection Settings</span></button>
+    <div class="settings-fields" id="settingsFields">
+      <div class="form-group">
+        <label for="apiUrl">API URL</label>
+        <input type="text" id="apiUrl" placeholder="https://your-domain/api/send">
+      </div>
+      <div class="form-group">
+        <label for="token">Bearer Token</label>
+        <input type="text" id="token" placeholder="your-secret-token">
+      </div>
+    </div>
+  </div>
+
+  <!-- Message Form -->
+  <div class="card">
+    <div class="card-title">New Message</div>
+    <div class="form-group">
+      <label for="devices">Target Devices (comma-separated, * for all)</label>
+      <input type="text" id="devices" placeholder="* 或 speaker,epaper">
+    </div>
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" id="title" placeholder="Message title">
+    </div>
+    <div class="form-group">
+      <label for="content">Content</label>
+      <textarea id="content" placeholder="Message content"></textarea>
+    </div>
+    <div class="form-group">
+      <div class="toggle-row">
+        <label style="margin-bottom:0">Play Immediately (for speaker)</label>
+        <label class="toggle">
+          <input type="checkbox" id="playNow">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <button class="btn-send" id="sendBtn">Send</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- E-paper Image Send -->
+  <div class="card">
+    <div class="card-title">Send Image to E-Paper (2.13" 250×122)</div>
+    <div class="form-group">
+      <label for="imgTargets">Target Devices (comma-separated, * for all)</label>
+      <input type="text" id="imgTargets" placeholder="* 或 epaper">
+    </div>
+    <div class="form-group">
+      <label>Image File (auto-crop & resize to 250×122)</label>
+      <label class="file-input-label" for="imgFile">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span id="imgFileName">Select image...</span>
+      </label>
+      <input type="file" id="imgFile" accept="image/*">
+      <div class="img-preview-wrap" id="imgPreviewWrap">
+        <img class="img-preview" id="imgPreview" src="" alt="preview">
+        <span class="img-preview-label">Processed (250×122, cropped & resized)</span>
+      </div>
+    </div>
+    <button class="btn-send" id="imgSendBtn">Send Image</button>
+    <div class="status" id="imgStatus"></div>
+  </div>
+
+  <!-- History -->
+  <div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      Recent Messages
+      <button class="btn-clear" id="clearHistory">Clear</button>
+    </div>
+    <div id="history"></div>
+  </div>
+</div>
+
+<!-- Image Crop Dialog -->
+<div class="img-crop-dialog" id="cropperModal">
+  <div class="img-crop-box">
+    <div class="img-crop-preview">
+      <img id="cropperImage" src="" alt="Crop">
+    </div>
+    <div class="img-crop-hint">Drag to adjust crop area • 250×122 for e-paper display</div>
+    <div class="img-crop-actions">
+      <button class="img-crop-btn img-crop-btn-secondary" id="cropperCancel">Cancel</button>
+      <button class="img-crop-btn img-crop-btn-primary" id="cropperConfirm">Apply & Upload</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+
+<script>
+// --- Theme ---
+const themeButtons = document.querySelectorAll('.theme-btn');
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+function applyTheme(mode) {
+  localStorage.setItem('theme', mode);
+  themeButtons.forEach(b => b.classList.toggle('active', b.dataset.theme === mode));
+  if (mode === 'auto') {
+    document.documentElement.setAttribute('data-theme', prefersDark.matches ? 'dark' : 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', mode);
+  }
+}
+
+themeButtons.forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
+prefersDark.addEventListener('change', () => {
+  if (localStorage.getItem('theme') === 'auto') applyTheme('auto');
+});
+applyTheme(localStorage.getItem('theme') || 'auto');
+
+// --- Settings ---
+const settingsToggle = document.getElementById('settingsToggle');
+const settingsFields = document.getElementById('settingsFields');
+const apiUrlInput = document.getElementById('apiUrl');
+const tokenInput = document.getElementById('token');
+
+settingsToggle.addEventListener('click', () => {
+  settingsFields.classList.toggle('open');
+  settingsToggle.querySelector('.settings-label').textContent = settingsFields.classList.contains('open') ? 'Hide Settings' : 'Connection Settings';
+});
+
+const devicesInput = document.getElementById('devices');
+
+apiUrlInput.value = localStorage.getItem('apiUrl') || '';
+tokenInput.value = localStorage.getItem('token') || '';
+devicesInput.value = localStorage.getItem('devices') || '*';
+
+apiUrlInput.addEventListener('input', () => localStorage.setItem('apiUrl', apiUrlInput.value.trim()));
+tokenInput.addEventListener('input', () => localStorage.setItem('token', tokenInput.value.trim()));
+devicesInput.addEventListener('input', () => localStorage.setItem('devices', devicesInput.value.trim()));
+
+// --- History ---
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('msgHistory') || '[]'); }
+  catch { return []; }
+}
+
+function saveHistory(list) {
+  localStorage.setItem('msgHistory', JSON.stringify(list.slice(0, 20)));
+}
+
+function renderHistory() {
+  const list = getHistory();
+  const el = document.getElementById('history');
+  if (!list.length) {
+    el.innerHTML = '<div class="history-empty">No records</div>';
+    return;
+  }
+  el.innerHTML = list.map((m, i) => `
+    <div class="history-item" data-index="${i}">
+      <div class="history-title">${escapeHtml(m.title)}</div>
+      <div class="history-content">${escapeHtml(m.content)}</div>
+    </div>
+  `).join('');
+  el.querySelectorAll('.history-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const m = list[parseInt(item.dataset.index)];
+      document.getElementById('title').value = m.title;
+      document.getElementById('content').value = m.content;
+      document.getElementById('playNow').checked = !!m.play_now;
+    });
+  });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Load latest message as default
+const history = getHistory();
+if (history.length) {
+  document.getElementById('title').value = history[0].title || '';
+  document.getElementById('content').value = history[0].content || '';
+  document.getElementById('playNow').checked = !!history[0].play_now;
+}
+renderHistory();
+
+document.getElementById('clearHistory').addEventListener('click', () => {
+  if (!getHistory().length) return;
+  saveHistory([]);
+  renderHistory();
+});
+
+// --- Send ---
+const sendBtn = document.getElementById('sendBtn');
+const statusEl = document.getElementById('status');
+
+sendBtn.addEventListener('click', async () => {
+  const url = localStorage.getItem('apiUrl');
+  const token = localStorage.getItem('token');
+  const devicesRaw = (localStorage.getItem('devices') || '*').trim();
+  const targets = devicesRaw === '*' ? ['*'] : devicesRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const title = document.getElementById('title').value.trim();
+  const content = document.getElementById('content').value.trim();
+  const playNow = document.getElementById('playNow').checked ? 1 : 0;
+
+  if (!url) { showStatus('error', 'Please fill in API URL in settings'); return; }
+  if (!token) { showStatus('error', 'Please fill in Token in settings'); return; }
+  if (!targets.length) { showStatus('error', 'Please fill in target devices'); return; }
+  if (!title || !content) { showStatus('error', 'Title and content cannot be empty'); return; }
+
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending...';
+  statusEl.className = 'status';
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ targets, event: { title, content, play_now: playNow } })
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} ${text}`);
+    }
+
+    const result = await res.json();
+    showStatus('success', `Sent successfully ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'})`);
+
+    // Save to history
+    const list = getHistory();
+    list.unshift({ title, content, play_now: playNow, time: new Date().toLocaleString() });
+    saveHistory(list);
+    renderHistory();
+  } catch (e) {
+    showStatus('error', `Send failed: ${e.message}`);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send';
+  }
+});
+
+function showStatus(type, msg) {
+  statusEl.className = `status ${type}`;
+  statusEl.textContent = msg;
+  setTimeout(() => { statusEl.className = 'status'; }, 5000);
+}
+
+// --- E-paper image send with Cropper.js ---
+const imgFile = document.getElementById('imgFile');
+const imgFileName = document.getElementById('imgFileName');
+const imgPreview = document.getElementById('imgPreview');
+const imgPreviewWrap = document.getElementById('imgPreviewWrap');
+const imgSendBtn = document.getElementById('imgSendBtn');
+const imgStatusEl = document.getElementById('imgStatus');
+const imgTargetsInput = document.getElementById('imgTargets');
+const cropperModal = document.getElementById('cropperModal');
+const cropperImage = document.getElementById('cropperImage');
+const cropperCancel = document.getElementById('cropperCancel');
+const cropperConfirm = document.getElementById('cropperConfirm');
+
+let cropper = null;
+let processedBlob = null;
+let originalFileName = '';
+
+imgTargetsInput.value = localStorage.getItem('imgTargets') || '*';
+imgTargetsInput.addEventListener('input', () => localStorage.setItem('imgTargets', imgTargetsInput.value.trim()));
+
+// Open cropper when file selected
+imgFile.addEventListener('change', () => {
+  const file = imgFile.files[0];
+  if (!file) return;
+
+  originalFileName = file.name;
+  imgFileName.textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    cropperImage.src = e.target.result;
+    cropperModal.classList.add('open'); // img-crop-dialog
+
+    // Initialize Cropper.js with 250:122 aspect ratio (e-paper dimensions)
+    if (cropper) cropper.destroy();
+    cropper = new Cropper(cropperImage, {
+      aspectRatio: 250 / 122,
+      viewMode: 1,
+      autoCropArea: 0.9,
+      responsive: true,
+      guides: true,
+      center: true,
+      highlight: true,
+      background: true,
+      modal: true,
+      movable: true,
+      rotatable: false,
+      scalable: false,
+      zoomable: true,
+      zoomOnTouch: true,
+      zoomOnWheel: true,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false,
+    });
+  };
+  reader.readAsDataURL(file);
+});
+
+// Cancel crop
+function closeCropper(clearBlob = true) {
+  cropperModal.classList.remove('open'); // img-crop-dialog
+  if (cropper) {
+    cropper.destroy();
+    cropper = null;
+  }
+  if (clearBlob) {
+    imgFile.value = '';
+    imgFileName.textContent = 'Select image...';
+    processedBlob = null;
+  }
+}
+
+cropperCancel.addEventListener('click', () => closeCropper(true));
+
+// Confirm crop - generate 250×122 image
+cropperConfirm.addEventListener('click', () => {
+  if (!cropper) return;
+
+  // Get cropped canvas and resize to exact 250×122
+  const canvas = cropper.getCroppedCanvas({
+    width: 250,
+    height: 122,
+    fillColor: '#fff',
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: 'high',
+  });
+
+  // Convert to blob for upload with compression (JPEG for smaller size)
+  function getCompressedBlob(quality, callback) {
+    canvas.toBlob((blob) => callback(blob), 'image/jpeg', quality);
+  }
+
+  // Try quality 0.9 first, then reduce if needed (stay under 800KB to be safe)
+  function compressAndSave(quality = 0.9) {
+    getCompressedBlob(quality, (blob) => {
+      if (blob.size > 800 * 1024 && quality > 0.5) {
+        // Too large, try lower quality
+        compressAndSave(quality - 0.1);
+        return;
+      }
+      if (blob.size > 1024 * 1024) {
+        showImgStatus('error', `Image still too large (${(blob.size/1024).toFixed(1)}KB). Try a simpler image.`);
+        closeCropper(true);
+        return;
+      }
+      processedBlob = blob;
+
+      // Show preview
+      imgPreview.src = canvas.toDataURL('image/jpeg', quality);
+      imgPreviewWrap.classList.add('visible');
+
+      closeCropper(false); // Don't clear the blob - we need it for upload
+    });
+  }
+
+  compressAndSave(0.9);
+});
+
+// Send the processed image
+imgSendBtn.addEventListener('click', async () => {
+  const url = localStorage.getItem('apiUrl');
+  const token = localStorage.getItem('token');
+  const targets = (localStorage.getItem('imgTargets') || '*').trim();
+
+  if (!url) { showImgStatus('error', 'Please fill in API URL in settings'); return; }
+  if (!token) { showImgStatus('error', 'Please fill in Token in settings'); return; }
+  if (!targets) { showImgStatus('error', 'Please fill in target devices'); return; }
+  if (!processedBlob) { showImgStatus('error', 'Please select and crop an image first'); return; }
+
+  imgSendBtn.disabled = true;
+  imgSendBtn.textContent = 'Sending...';
+  imgStatusEl.className = 'status';
+
+  try {
+    const form = new FormData();
+    form.append('targets', targets);
+    form.append('image', processedBlob, originalFileName.replace(/\.[^.]+$/, '_cropped.jpg'));
+
+    const endpoint = (url.replace(/\/api\/send\/?$/, '')) + '/api/send-image-2-13inch-touch-e-paper-hat-with-case/';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: form
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status} ${text}`);
+    }
+
+    const result = await res.json();
+    showImgStatus('success', `Sent successfully ✓ (delivered: ${result.delivered ?? '-'}, ${result.size_bytes} bytes)`);
+  } catch (e) {
+    showImgStatus('error', `Send failed: ${e.message}`);
+  } finally {
+    imgSendBtn.disabled = false;
+    imgSendBtn.textContent = 'Send Image';
+  }
+});
+
+function showImgStatus(type, msg) {
+  imgStatusEl.className = `status ${type}`;
+  imgStatusEl.textContent = msg;
+  setTimeout(() => { imgStatusEl.className = 'status'; }, 5000);
+}
+
+// --- Service Worker ---
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

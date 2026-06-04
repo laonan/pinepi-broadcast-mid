@@ -1,0 +1,31 @@
+[Unit]
+Description=Pinepi WebSocket + HTTP Broadcast Service
+After=network.target
+
+[Service]
+Type=simple
+User=pinepi-broadcast-mid
+Group=pinepi-broadcast-mid
+WorkingDirectory=/opt/pinepi-broadcast-mid
+ExecStart=/opt/pinepi-broadcast-mid/venv/bin/uvicorn broadcast_server_mid:app --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/pinepi-broadcast-mid
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
