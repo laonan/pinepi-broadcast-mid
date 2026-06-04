@@ -281,7 +281,7 @@ ws.onmessage = (e) => {
 
 ### Web Demo (Optional)
 
-The `web/` directory contains a lightweight static web console for testing and demonstration.
+The `examples/web/` directory contains a lightweight static web console for testing and demonstration.
 
 - No backend required
 - Runs directly in browser
