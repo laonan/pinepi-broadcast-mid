@@ -24,17 +24,18 @@ fi
 # ---- System dependencies ---------------------------------------------------
 echo "[1/6] Installing system dependencies..."
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip
+apt-get install -y -qq python3 python3-venv python3-pip ffmpeg
 
 # ---- Install directory -----------------------------------------------------
 echo "[2/6] Setting up ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}"
-cp "${SCRIPT_DIR}/python/broadcast_server_mid.py" "${INSTALL_DIR}/"
+cp "${SCRIPT_DIR}/python/"*.py "${INSTALL_DIR}/"
 
 # Create dedicated user if it doesn't exist
 if ! id "${SERVICE_USER}" &>/dev/null; then
     useradd --system --home-dir "${INSTALL_DIR}" --shell /usr/sbin/nologin "${SERVICE_USER}"
 fi
+install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 700 /var/lib/pinepi-broadcast-mid
 chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
 
 # ---- Python venv + packages ------------------------------------------------

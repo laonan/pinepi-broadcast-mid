@@ -7,14 +7,17 @@ Type=simple
 User=pinepi-broadcast-mid
 Group=pinepi-broadcast-mid
 WorkingDirectory=/opt/pinepi-broadcast-mid
-ExecStart=/opt/pinepi-broadcast-mid/venv/bin/uvicorn broadcast_server_mid:app --host 127.0.0.1 --port 8765
+ExecStart=/opt/pinepi-broadcast-mid/venv/bin/uvicorn broadcast_server_mid:app --host 127.0.0.1 --port 8765 --workers 1 --ws-max-size 65536
 Restart=always
 RestartSec=5
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/etc/pinepi-broadcast-mid
+StateDirectory=pinepi-broadcast-mid
+StateDirectoryMode=0700
+UMask=0077
+ReadWritePaths=/var/lib/pinepi-broadcast-mid
 ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true

@@ -4,18 +4,41 @@
       "targets": "*"
     },
     "REPLACE_WITH_PRODUCER_SPEAKER_TOKEN": {
-      "targets": ["speaker"]
+      "targets": [
+        "speaker"
+      ]
     },
     "REPLACE_WITH_PRODUCER_EPAPER_TOKEN": {
-      "targets": ["epaper"]
+      "targets": [
+        "epaper"
+      ]
     }
   },
   "devices": {
     "speaker": {
-      "token": "REPLACE_WITH_PRODUCER_SPEAKER_TOKEN"
+      "token": "REPLACE_WITH_DEVICE_SPEAKER_TOKEN"
     },
     "epaper": {
-      "token": "REPLACE_WITH_PRODUCER_EPAPER_TOKEN"
+      "token": "REPLACE_WITH_DEVICE_EPAPER_TOKEN"
     }
+  },
+  "media": {
+    "data_dir": "/var/lib/pinepi-broadcast-mid/media",
+    "public_base_url": "https://mid.example.com",
+    "signing_key_base64": "REPLACE_WITH_BASE64_RANDOM_32_BYTE_KEY",
+    "max_upload_bytes": 104857600,
+    "producer_capacity_bytes": 524288000,
+    "total_capacity_bytes": 5368709120,
+    "uploads_per_minute": 10,
+    "retention_seconds": 86400,
+    "ticket_seconds": 300,
+    "grace_seconds": 60,
+    "cleanup_interval_seconds": 30,
+    "upload_timeout_seconds": 120,
+    "temporary_retention_seconds": 600,
+    "tombstone_seconds": 604800,
+    "max_assets": 10000,
+    "max_deliveries_per_asset": 200,
+    "max_image_pixels": 16000000
   }
 }

@@ -4,47 +4,65 @@ import os
 import time
 import json
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, UploadFile, File, Form, Request, Response
+import contextlib
+import hmac
+import re
+from urllib.parse import urlsplit
+from fastapi.responses import StreamingResponse, JSONResponse
+from media_store import MediaStore, fail
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, UploadFile, File, Form, Request
 from collections import deque
 from PIL import Image
-try:
-    from PIL import ImageDecompressionBombError
-except ImportError:
-    # Fallback for older Pillow versions
-    ImageDecompressionBombError = Exception
+ImageDecompressionBombError = Image.DecompressionBombError
 from typing import Dict
 from dataclasses import dataclass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+class RedactTickets(logging.Filter):
+    def filter(self, record):
+        def redact(value):
+            return re.sub(r"(?i)(ticket=)[^ &\\\"]+", r"\1[REDACTED]", value) if isinstance(value, str) else value
+        record.msg = redact(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(redact(v) for v in record.args)
+        return True
+
+logging.getLogger("uvicorn.access").addFilter(RedactTickets())
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    global MEDIA
+    MEDIA = MediaStore(_config.get("media", {})) if _config.get("media") else None
+    if MEDIA and any(MEDIA.key == token.encode() or _config["media"]["signing_key_base64"] == token
+                     for token in [*PRODUCER_TOKENS, *DEVICE_TOKENS.values()]):
+        MEDIA.close()
+        raise RuntimeError("Media signing key must be independent from Producer/Device credentials")
+    async def maintenance():
+        while True:
+            await asyncio.sleep(MEDIA.cfg["cleanup_interval_seconds"])
+            try:
+                MEDIA.cleanup()
+            except Exception:
+                logger.exception("Media cleanup failed; retrying next interval")
+    task = asyncio.create_task(maintenance()) if MEDIA else None
+    try:
+        yield
+    finally:
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        if MEDIA:
+            MEDIA.close()
+
+app = FastAPI(lifespan=lifespan)
+MEDIA = None
 
 # Configure Pillow limits once at startup to prevent decompression bombs
-# Allow up to 8MP (roughly 4K resolution) which is reasonable for most images
+# Keep the legacy adapter limit; generic uploads enforce a separate configurable pixel cap.
 Image.MAX_IMAGE_PIXELS = 8000 * 8000
-
-# ---------------- Middleware ----------------
-
-@app.middleware("http")
-async def payload_size_middleware(request: Request, call_next):
-    """Validate Content-Length before FastAPI parses the body."""
-    if request.url.path.startswith("/api/"):
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                size = int(content_length)
-                if size > MAX_PAYLOAD_SIZE:
-                    return Response(
-                        content='{"detail": "Payload too large"}',
-                        status_code=413,
-                        media_type="application/json"
-                    )
-            except ValueError:
-                pass  # Invalid Content-Length header, let FastAPI handle it
-    
-    response = await call_next(request)
-    return response
 
 # ---------------- Config ----------------
 
@@ -72,6 +90,15 @@ DEVICE_TOKENS: dict[str, str] = {
     name: cfg["token"]
     for name, cfg in _config.get("devices", {}).items()
 }
+
+producer_ids = [str(cfg.get("id", token)) for token, cfg in PRODUCER_TOKENS.items()]
+if len(set(producer_ids)) != len(producer_ids):
+    raise RuntimeError("Each Producer must have a unique ownership identity")
+
+if len(set(DEVICE_TOKENS.values())) != len(DEVICE_TOKENS):
+    raise RuntimeError("Each device must have a unique Device Token")
+if set(PRODUCER_TOKENS) & set(DEVICE_TOKENS.values()):
+    raise RuntimeError("Producer and Device Tokens must be distinct; update overlapping credentials")
 
 if not PRODUCER_TOKENS:
     raise RuntimeError("config.json: no producers defined")
@@ -152,6 +179,8 @@ def _resolve_targets(producer_token: str, requested: list[str]) -> list[str]:
     Raises HTTPException 401 if the token is unknown, 403 if a requested
     device is outside the producer's allowed targets.
     """
+    if not isinstance(requested, list) or not requested or any(not isinstance(d, str) or not d for d in requested):
+        fail(422, "targets must be a nonempty list of device names")
     cfg = PRODUCER_TOKENS.get(producer_token)
     if cfg is None:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -162,11 +191,16 @@ def _resolve_targets(producer_token: str, requested: list[str]) -> list[str]:
     else:
         allowed_set = set(allowed)
     if "*" in requested:
-        return [d for d in all_devices if d in allowed_set]
+        resolved = [d for d in all_devices if d in allowed_set]
+        if not resolved:
+            fail(403, "Producer has no permitted target devices")
+        return resolved
     for d in requested:
         if d not in allowed_set:
             raise HTTPException(status_code=403, detail=f"Producer not allowed to target device '{d}'")
-    return requested
+    if any(d not in DEVICE_TOKENS for d in requested):
+        fail(422, "Unknown target device")
+    return list(dict.fromkeys(requested))
 
 
 def _ensure_offline_buffer(device_name: str) -> ClientState:
@@ -266,6 +300,11 @@ async def websocket_endpoint(ws: WebSocket):
                     client.id, device_name, len(client.offline_buffer))
         await flush_offline_buffer(client)
 
+    if MEDIA:
+        for envelope in MEDIA.pending(device_name):
+            if not await safe_send(client, json.dumps(envelope, ensure_ascii=False)):
+                break
+
     # Start heartbeat
     hb_task = asyncio.create_task(heartbeat_loop(client))
 
@@ -277,6 +316,12 @@ async def websocket_endpoint(ws: WebSocket):
                 msg = json.loads(data)
                 if msg.get("type") == "pong":
                     client.last_pong = time.monotonic()
+                elif msg.get("type") == "media.cached" and MEDIA:
+                    try:
+                        result = MEDIA.acknowledge(msg.get("media_id"), msg.get("delivery_id"), msg.get("sha256"), device_name)
+                        await ws.send_json({"type": "media.cached.result", **result})
+                    except HTTPException as exc:
+                        await ws.send_json({"type": "media.cached.result", "status": "error", "code": exc.status_code, "detail": exc.detail})
             except (json.JSONDecodeError, AttributeError):
                 pass
     except WebSocketDisconnect:
@@ -320,6 +365,35 @@ async def send_message(request: Request, body: dict, authorization: str = Header
     
     # Rate limiting (after token validation)
     _check_rate_limit(producer_token)
+    if ("media_id" in body and "media_ids" in body) or ("media_urls" in body and ("media_id" in body or "media_ids" in body)):
+        fail(422, "Use exactly one media reference form")
+    ids = body.get("media_ids", [body["media_id"]] if "media_id" in body else [])
+    if "downloads" in body or "auth_mode" in body:
+        fail(422, "Download descriptors are generated by Mid")
+    if not isinstance(ids, list) or len(ids) > 1 or any(not isinstance(i, str) for i in ids):
+        fail(422, "media_ids must be an array of at most one ID")
+    if ids:
+        store = media_store()
+        # Persist before sending: WebSocket success never marks cached.
+        event = body.get("event", {k: v for k, v in body.items() if k not in ("media_id", "media_ids", "targets")})
+        deliveries = store.publish(ids, store.owner(producer_token, PRODUCER_TOKENS[producer_token]), targets, event)
+        delivered = 0
+        for meta, delivery in deliveries:
+            for device in targets:
+                client = CONNECTED_BY_DEVICE.get(device)
+                if client and await safe_send(client, json.dumps(store.envelope(meta, delivery, device), ensure_ascii=False)):
+                    delivered += 1
+        return {"status": "ok", "delivered": delivered, "buffered": len(deliveries) * len(targets) - delivered,
+                "delivery_ids": [d["delivery_id"] for _, d in deliveries], "publication_id": deliveries[0][1]["publication_id"]}
+    if "media_urls" in body:
+        urls = body["media_urls"]
+        if not isinstance(urls, list) or not 1 <= len(urls) <= 16:
+            fail(422, "media_urls must contain 1–16 HTTPS URLs")
+        for url in urls:
+            validate_external_url(url)
+        # The Hub performs DNS/IP and redirect checks before every external request.
+        body = {"event": body.get("event", {}), "downloads": [
+            {"url": url, "auth_mode": "NONE"} for url in urls]}
     # Broadcast full message format with event wrapper for uniformity
     if "event" in body:
         # New format: keep the event wrapper
@@ -459,3 +533,159 @@ async def send_epaper_image(
             logger.info("Device %s offline, image not buffered (binary frames are not buffered)", device_name)
 
     return {"status": "ok", "delivered": delivered, "size_bytes": len(payload)}
+
+
+# ---------------- Media HTTP protocol and bounded ingress ----------------
+
+def media_store():
+    if MEDIA is None:
+        fail(503, "Media is disabled: configure media signing key and storage")
+    return MEDIA
+
+
+def bearer(value):
+    if not value or not value.startswith("Bearer ") or not value[7:]:
+        fail(401, "Bearer credential required")
+    return value[7:]
+
+
+def device_identity(authorization):
+    token = bearer(authorization)
+    for device, expected in DEVICE_TOKENS.items():
+        if hmac.compare_digest(token, expected):
+            return device
+    fail(401, "Invalid Device Token")
+
+
+def validate_external_url(url):
+    import ipaddress
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+        if (parsed.scheme != "https" or not host or parsed.username or parsed.password or
+                parsed.fragment or parsed.port not in (None, 443) or
+                parsed.path.startswith("/api/media") or
+                host.lower() in ("localhost", "localhost.localdomain") or
+                host.endswith((".local", ".localhost", ".internal")) or "." not in host):
+            fail(422, "External media requires a public HTTPS URL")
+        try:
+            if not ipaddress.ip_address(host).is_global:
+                fail(422, "External media address is not public")
+        except ValueError:
+            pass
+        if MEDIA and parsed.netloc == urlsplit(MEDIA.base).netloc:
+            fail(422, "Mid URLs cannot use NONE authentication")
+    except (TypeError, ValueError):
+        fail(422, "Invalid media URL")
+
+
+@app.post("/api/media", status_code=201)
+async def upload_media(request: Request):
+    token = bearer(request.headers.get("authorization"))
+    _resolve_targets(token, ["*"])
+    store = media_store()
+    return await store.upload(request, store.owner(token, PRODUCER_TOKENS[token]), lambda targets: _resolve_targets(token, targets))
+
+
+@app.post("/api/media/{media_id}/ticket")
+async def refresh_media_ticket(media_id: str, request: Request):
+    device = device_identity(request.headers.get("authorization"))
+    store = media_store()
+    with store.lock:
+        return store.descriptor(store.get(media_id, device=device), device)
+
+
+@app.post("/api/media/{media_id}/cached")
+async def media_cached(media_id: str, request: Request, body: dict):
+    device = device_identity(request.headers.get("authorization"))
+    return media_store().acknowledge(media_id, body.get("delivery_id"), body.get("sha256"), device)
+
+
+@app.get("/api/media/{media_id}")
+async def download_media(media_id: str, request: Request):
+    device = device_identity(request.headers.get("authorization"))
+    store = media_store()
+    meta, file = store.open_download(media_id, device, request.query_params.get("ticket", ""))
+    size = meta["size_bytes"]
+    start, end, status = 0, size - 1, 200
+    # Single byte ranges support interrupted MP4 downloads. Multiple ranges are rejected.
+    try:
+        value = request.headers.get("range")
+        if value and request.headers.get("if-range", '"' + meta["sha256"] + '"') == '"' + meta["sha256"] + '"':
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", value)
+            if not match or not any(match.groups()):
+                fail(416, "Invalid byte range")
+            first, last = match.groups()
+            if first:
+                start = int(first)
+                end = min(int(last), end) if last else end
+            else:
+                suffix = int(last)
+                if suffix == 0:
+                    fail(416, "Invalid suffix range")
+                start = max(0, size - suffix)
+            if start >= size or start > end:
+                fail(416, "Unsatisfiable byte range")
+            status = 206
+    except (HTTPException, ValueError):
+        store.release_download(media_id, file)
+        return JSONResponse({"detail": "Unsatisfiable byte range"}, status_code=416, headers={"Content-Range": f"bytes */{size}"})
+    async def chunks():
+        try:
+            file.seek(start)
+            remaining = end - start + 1
+            while remaining:
+                data = file.read(min(256 * 1024, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+        finally:
+            store.release_download(media_id, file)
+    headers = {"Content-Length": str(end - start + 1), "Accept-Ranges": "bytes", "ETag": '"' + meta["sha256"] + '"',
+               "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+    if status == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(chunks(), status_code=status, media_type=meta["mime_type"], headers=headers)
+
+
+class BoundedIngress:
+    """Authenticate before any body read; limit actual ASGI bytes, even without Content-Length."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+            return await self.app(scope, receive, send)
+        headers = dict(scope["headers"])
+        path, method = scope["path"], scope["method"]
+        try:
+            auth = headers.get(b"authorization", b"").decode("latin1")
+            upload = path == "/api/media" and method == "POST"
+            epaper = path.startswith("/api/send-image-")
+            if upload or epaper or path == "/api/send":
+                _resolve_targets(bearer(auth), ["*"])
+            elif path.startswith("/api/media/"):
+                device_identity(auth)
+            limit = media_store().cfg["max_upload_bytes"] + 16384 if upload else (IMAGE_MAX_BYTES + 16384 if epaper else MAX_PAYLOAD_SIZE)
+            length = headers.get(b"content-length")
+            try:
+                declared = int(length) if length is not None else 0
+            except ValueError:
+                fail(400, "Invalid Content-Length")
+            if declared < 0 or declared > limit:
+                fail(413, "Payload too large")
+            received = 0
+            async def bounded_receive():
+                nonlocal received
+                message = await receive()
+                received += len(message.get("body", b""))
+                if received > limit:
+                    fail(413, "Payload too large")
+                return message
+            await self.app(scope, bounded_receive, send)
+        except HTTPException as exc:
+            await JSONResponse({"detail": exc.detail}, status_code=exc.status_code)(scope, receive, send)
+
+
+app.add_middleware(BoundedIngress)

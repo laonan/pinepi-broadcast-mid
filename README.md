@@ -1,356 +1,73 @@
-# pinepi-broadcast-mid — Multi-Device WebSocket Broadcast Service
+# PinePi Broadcast Mid
 
-A lightweight FastAPI + WebSocket server that routes messages from producers to multiple named devices. Each device authenticates with its own token. Producers authenticate separately and can target one or more devices per message.
+[简体中文](README.zh-CN.md) · [Media protocol](docs/media.md) · [媒体协议](docs/media.zh-CN.md)
 
----
+FastAPI relay for authenticated Producers and named Hubs/devices. Text broadcasts and the independent e-paper conversion endpoint remain available. Producers can also upload private JPEG/PNG images and H.264/AAC MP4 videos for delivery to Hubs. Mid temporarily stores media; Hubs retain their own caches for terminal history.
 
-## Architecture
+## Install
 
-```
-                     +------------------+
-                     | Broadcast Server |
-                     +------------------+
-                              ▲
-                              │
-                    POST /api/send
-                              │
-                          Producer
+Requires Linux, Python 3.11–3.13, and FFmpeg (`ffprobe`).
 
-         ┌────────────────────┼────────────────────┐
-         ▼                    ▼                    ▼
-
-   device:speaker      device:epaper      device:other
-      WebSocket          WebSocket          WebSocket
-```
-
----
-
-## Installation
-
-### Manual Installation
-
-```bash
-# 1. get source
+```sh
 git clone https://github.com/laonan/pinepi-broadcast-mid.git
 cd pinepi-broadcast-mid
-
-# 2. Fill in your tokens
 cp config.json.example config.json
-nano config.json
-
-# 3. Install (requires root, Debian/Ubuntu)
+# Edit tokens, media.public_base_url and media.signing_key_base64 first.
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))' # run separately for each credential
+python3 -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())' # signing key
 sudo bash install.sh
 ```
 
+The installer creates a dedicated service user, installs dependencies and FFmpeg, and starts systemd. Configuration is `/etc/pinepi-broadcast-mid/config.json` (mode 0600); persistent state is `/var/lib/pinepi-broadcast-mid/` (mode 0700). Configure HTTPS/WSS at the reverse proxy. Run **one Uvicorn worker**, without reload; a filesystem lock rejects a second media process using the same directory. Local/manual startup:
 
-### Quick Install Script
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+PINEPI_BROADCAST_CONFIG="$PWD/config.json" .venv/bin/uvicorn broadcast_server_mid:app \
+  --app-dir python --host 127.0.0.1 --port 8765 --workers 1 --ws-max-size 65536
+```
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/laonan/pinepi-broadcast-mid/main/install.sh | sudo bash
+For local development choose a writable `media.data_dir`; download URLs still use the configured HTTPS origin. Removing the `media` section disables media endpoints and preserves text/e-paper service. An invalid media configuration fails startup.
 
-# After installation:
-cp /etc/pinepi-broadcast-mid/config.json.example /etc/pinepi-broadcast-mid/config.json
-nano /etc/pinepi-broadcast-mid/config.json
+## Identities
+
+`producers` maps Producer Tokens to `{"targets":"*"}` or `{"targets":["speaker"]}`. `devices` maps device names to `{"token":"DEVICE_TOKEN"}`. **Device Tokens must be unique and separate from Producer Tokens**; configurations that reused a token must be migrated. Optional producer `id` is a stable, unique identity for ownership across token rotation. Otherwise ownership is the SHA-256 of the Producer Token. Never give different producers the same `id`.
+
+HTTP uses `Authorization: Bearer …`. Producers upload and publish; Device Tokens connect, download, refresh tickets and confirm caching. A separate random signing key of at least 32 bytes signs HS256 download tickets, stays on Mid, and is never a credential for uploads. Configuration changes require restart. The [media protocol](docs/media.md) specifies permissions, quotas, lifecycle and Hub responsibilities.
+
+## Existing interfaces
+
+Publish a JSON event (64 KiB maximum request, 100 requests/minute per Producer):
+
+```sh
+curl https://mid.example.com/api/send -H "Authorization: Bearer $PRODUCER_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"targets":["speaker"],"event":{"title":"Hello","content":"World"}}'
+```
+
+`targets:["*"]` selects the Producer's permitted configured devices. Legacy requests without `event` are wrapped as `{"event": body}`. Ordinary text messages have an in-memory offline buffer (200 messages / 2 MiB per device); media deliveries have durable pending state.
+
+Connect to `wss://mid.example.com/ws/` and send `{"device":"speaker","token":"DEVICE_TOKEN"}` within five seconds. Reply to `{"type":"ping"}` with `{"type":"pong"}`. A second connection replaces the first. See [Python subscriber](examples/subscribe_demo.py) and [web demo](examples/web/index.html).
+
+The independent device adapter still accepts common Pillow-supported image formats, up to 1 MiB:
+
+```sh
+curl https://mid.example.com/api/send-image-2-13inch-touch-e-paper-hat-with-case/ \
+  -H "Authorization: Bearer $PRODUCER_TOKEN" -F 'targets=epaper' -F 'image=@photo.png'
+```
+
+It sends a raw 4000-byte binary WebSocket frame (250×122 monochrome), only to connected devices; it does not create media assets or offline binary deliveries.
+
+## Media and deployment
+
+See [the full protocol and configuration defaults](docs/media.md) for upload, publish, ticket refresh, Range download, completion confirmation, Nginx setup and failure recovery. No SQLite, Redis, external URL fetching, webpage extraction or transcoding is used. Hub caching and terminal URL rewriting are implemented in the separate Hub project.
+
+```sh
 sudo systemctl restart pinepi-broadcast-mid
-```
-
-The script installs to `/opt/pinepi-broadcast-mid`, creates a Python venv, installs dependencies, and registers a systemd service (`pinepi-broadcast-mid`).
-
----
-
-## Configuration
-
-Edit `config.json` :
-
-```json
-{
-  "producers": {
-    "<producer_token>": { "targets": "*" },
-    "<producer_speaker_token>": { "targets": ["speaker"] },
-    "<producer_epaper_token>": { "targets": ["epaper"] }
-  },
-  "devices": {
-    "speaker": { "token": "<producer_speaker_token>" },
-    "epaper":  { "token": "<producer_epaper_token>" }
-  }
-}
-```
-
-- **`producers`** — map of producer tokens to their allowed targets (`"*"` = all devices, or an array like `["speaker"]`)
-- **`devices`** — map of device names to their WebSocket auth tokens
-
-`config.json` is installed to `/etc/pinepi-broadcast-mid/config.json` with `chmod 600`.
-
----
-
-## WebSocket Auth (Device Side)
-
-After connecting, the device must send a JSON auth message within 5 seconds:
-
-```json
-{ "token": "<device_token>", "device": "speaker" }
-```
-
-The server validates the token against the device name in `/etc/pinepi-broadcast-mid/config.json`. On success the connection is kept alive with heartbeat pings.
-
----
-
-## HTTP API (Producer Side)
-
-### `POST /api/send`
-
-**Header:** `Authorization: Bearer <producer_token>`
-
-**Body:**
-```json
-{
-  "targets": ["speaker", "epaper"],
-  "event": { "type": "...", "data": "..." }
-}
-```
-
-- `targets` — array of device names, or `["*"]` to broadcast to all
-- `event` — arbitrary JSON payload forwarded to each target device
-
-Messages are buffered per device if the target is currently offline and delivered on reconnect.
-
----
-
-## Examples
-
-### Send a message via `curl`
-
-Send to a single device:
-```bash
-curl -X POST https://your-domain/api/send \
-  -H "Authorization: Bearer <producer_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "targets": ["speaker"],
-    "event": { "title": "Hello", "content": "World", "play_now": 1 }
-  }'
-```
-
-Broadcast to all devices:
-```bash
-curl -X POST https://your-domain/api/send \
-  -H "Authorization: Bearer <producer_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "targets": ["*"],
-    "event": { "title": "Announcement", "content": "Reboot in 5 min" }
-  }'
-```
-
-Fan-out to multiple specific devices:
-```bash
-curl -X POST https://your-domain/api/send \
-  -H "Authorization: Bearer <producer_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "targets": ["speaker", "epaper"],
-    "event": { "title": "Alert", "content": "Sensor triggered" }
-  }'
-```
-
-Send an image to the Waveshare 2.13" e-paper screen:
-```bash
-curl -X POST https://your-domain/api/send-image-2-13inch-touch-e-paper-hat-with-case/ \
-  -H "Authorization: Bearer <producer_token>" \
-  -F "targets=epaper" \
-  -F "image=@/path/to/photo.jpg"
-```
-
-Fan-out image to multiple devices:
-```bash
-curl -X POST https://your-domain/api/send-image-2-13inch-touch-e-paper-hat-with-case/ \
-  -H "Authorization: Bearer <producer_token>" \
-  -F "targets=epaper,other_epaper" \
-  -F "image=@/path/to/photo.png"
-```
-
-- Any common image format is accepted (JPEG, PNG, BMP, etc.)
-- The image is automatically resized to 122×250 and converted to 1-bit monochrome
-- Original file must be ≤ 1 MB; larger files are rejected with HTTP 413
-- The device receives a raw 4000-byte binary WebSocket frame (no JSON wrapper)
-
-Image endpoint success response:
-```json
-{ "status": "ok", "delivered": 1, "size_bytes": 4000 }
-```
-
----
-
-Example `/api/send` success response:
-```json
-{ "status": "ok", "delivered": 2, "buffered": 0 }
-```
-
----
-
-### Subscribe over WebSocket (device side)
-
-**Python example (text messages):**
-```python
-import asyncio, json, websockets
-
-async def main():
-    async with websockets.connect("wss://your-domain/ws/") as ws:
-        # Step 1: authenticate
-        await ws.send(json.dumps({"token": "<device_token>", "device": "speaker"}))
-
-        # Step 2: receive messages
-        async for message in ws:
-            # Handle binary frames (e-paper images) and text frames (JSON)
-            if isinstance(message, bytes):
-                print("Received binary image data:", len(message), "bytes")
-                # Process binary data for e-paper display
-                continue
-            
-            # Handle text frames (JSON)
-            data = json.loads(message)
-            if data.get("type") == "ping":
-                await ws.send(json.dumps({"type": "pong"}))
-            else:
-                # New format: extract event data
-                event = data.get("event", data)
-                print("Received event:", event)
-
-asyncio.run(main())
-```
-
-**Python example (e-paper image display):**
-```python
-import asyncio, json, websockets
-import epaper_driver  # Your e-paper display driver
-
-async def main():
-    async with websockets.connect("wss://your-domain/ws/") as ws:
-        # Step 1: authenticate
-        await ws.send(json.dumps({"token": "<device_token>", "device": "epaper"}))
-
-        # Step 2: receive messages
-        async for message in ws:
-            # Handle binary frames (images) and text frames (ping/pong)
-            if isinstance(message, bytes):
-                # Binary frame: 4000 bytes for 250x122 e-paper display
-                if len(message) == 4000:
-                    print("Displaying image on e-paper")
-                    epaper_driver.display_image(message)  # Send to e-paper driver
-                else:
-                    print(f"Unexpected binary data: {len(message)} bytes")
-            else:
-                # Text frame: JSON messages (ping/pong)
-                data = json.loads(message)
-                if data.get("type") == "ping":
-                    await ws.send(json.dumps({"type": "pong"}))
-                else:
-                    # New format: extract event data
-                    event = data.get("event", data)
-                    print("Received event:", event)
-
-asyncio.run(main())
-```
-
-**JavaScript (browser) example:**
-```js
-const ws = new WebSocket("wss://your-domain/ws/");
-
-ws.onopen = () => {
-  ws.send(JSON.stringify({ token: "<device_token>", device: "epaper" }));
-};
-
-ws.onmessage = (e) => {
-  // Handle binary frames (e-paper images) and text frames (JSON)
-  if (e.data instanceof Blob) {
-    console.log("Received binary image data");
-    // Process binary data for e-paper display
-    return;
-  }
-  
-  const data = JSON.parse(e.data);
-  if (data.type === "ping") {
-    ws.send(JSON.stringify({ type: "pong" }));
-  } else {
-    // New format: extract event data
-    const event = data.event || data;
-    console.log("Received event:", event);
-  }
-};
-```
-
-### Web Demo (Optional)
-
-The `examples/web/` directory contains a lightweight static web console for testing and demonstration.
-
-- No backend required
-- Runs directly in browser
-- Stores credentials in browser localStorage
-- Useful for quick prototyping and debugging device messaging
-
----
-
-## Service Management
-
-```bash
-# View logs
 journalctl -u pinepi-broadcast-mid -f
-
-# Restart
-sudo systemctl restart pinepi-broadcast-mid
-
-# Status
-sudo systemctl status pinepi-broadcast-mid
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
 ```
 
----
-
-## Nginx Proxy Config
-
-```nginx
-http {
-  limit_req_zone $binary_remote_addr zone=ws_limit:10m rate=2r/s;
-  # ...
-}
-
-
-# WebSocket endpoint
-location /ws/ {
-    limit_req zone=ws_limit burst=10 nodelay;
-    limit_req_status 429;
-
-    proxy_pass http://127.0.0.1:8765/ws/;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "Upgrade";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 86400;
-}
-
-# API endpoints
-location /api/ {
-    proxy_pass http://127.0.0.1:8765;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    
-    # Security headers
-    add_header X-Content-Type-Options nosniff;
-    add_header X-Frame-Options DENY;
-    add_header X-XSS-Protection "1; mode=block";
-    
-    # Rate limiting (optional, adjust as needed)
-    # limit_req zone=api burst=20 nodelay;
-}
-
-# Rate limiting zone (add to http block)
-# limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
-```
-
-## License
-
-MIT License
+Tests require `ffmpeg` and `ffprobe` and cover security, delivery persistence, retries, Range requests, cleanup and compatibility. MIT License.
