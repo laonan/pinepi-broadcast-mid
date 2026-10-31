@@ -18,7 +18,34 @@ python3 -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32
 sudo bash install.sh
 ```
 
-The installer creates a dedicated service user, installs dependencies and FFmpeg, and starts systemd. Configuration is `/etc/pinepi-broadcast-mid/config.json` (mode 0600); persistent state is `/var/lib/pinepi-broadcast-mid/` (mode 0700). Configure HTTPS/WSS at the reverse proxy. Run **one Uvicorn worker**, without reload; a filesystem lock rejects a second media process using the same directory. Local/manual startup:
+Use the **same installer for every upgrade or repair**:
+
+```sh
+cd /home/ubuntu/pinepi-broadcast-mid # your source checkout
+git pull --ff-only
+sudo bash install.sh
+```
+
+The installer always preserves an existing `/etc/pinepi-broadcast-mid/config.json`, even if the checkout contains another `config.json`. On the first installation it uses the checkout's config; if neither exists, it creates a protected template and exits until you fill it in and rerun. It never offers to continue with placeholder credentials. Existing credentials are validated, never automatically rotated or merged. A legacy config without `media` stays media-disabled; add the media section explicitly to enable uploads.
+
+Each run copies all application modules and web assets into a new permanent `/opt/pinepi-broadcast-mid/releases/<release>/` directory and creates a **fresh virtualenv there**, so upgrades also repair missing/broken dependencies in the old environment. Pip installation, `pip check`, dependency imports and application/configuration startup validation run before stopping the old service. The installer selects Python 3.11–3.13, installs FFmpeg and the matching venv package when needed, and validates configuration as the dedicated service user. If no supported Python exists, install one using your distribution's packages and run `sudo bash install.sh --python /usr/bin/python3.12` (choose the version actually installed).
+
+After preflight, it switches `/opt/pinepi-broadcast-mid/current`, installs/reloads/enables the systemd unit, restarts it, and waits for local unauthenticated `POST /api/send` to return **401**. Startup/readiness failure restores the previous unit, release link and web files; a previously active service is restarted. An already broken old service cannot be made healthy by rollback. Failure before switching leaves the old runtime in place. Prepared and previous releases are retained for inspection; only remove inactive releases when you no longer need them. A deployment lock prevents simultaneous installers. Restart still drops ordinary in-memory text buffers; durable media deliveries recover from the separate data directory.
+
+The web demo is deployed automatically to `/var/www/pinepi-broadcast-mid`, a symlink to the active release's web-only directory. A previous directory/link is retained beside it as `.before-<release>`. To update an existing **dedicated** Nginx document root, pass `sudo bash install.sh --web-dir /your/existing/site/root` on every upgrade. Do not choose a root shared with unrelated sites. The installer does not change your domain, TLS certificates or Nginx configuration; point your existing root/alias at that directory, or add this to the TLS server:
+
+```nginx
+location /demo/ {
+    alias /var/www/pinepi-broadcast-mid/;
+    index index.html;
+}
+```
+
+Retain the API/WebSocket/media proxy rules in [the deployment reference](docs/media.md#systemd-and-nginx), then run `sudo nginx -t` and `sudo systemctl reload nginx` after proxy changes. This serves the demo at `https://YOUR_MID_HOST/demo/`; use `https://YOUR_MID_HOST/api/send` and a Producer Token in its connection settings.
+
+Configuration stays at `/etc/pinepi-broadcast-mid/config.json` (0600); persistent media stays at `/var/lib/pinepi-broadcast-mid/` (0700) and is never replaced during deployment. Existing flat `/opt/pinepi-broadcast-mid` installations migrate through the same installer; their old files/venv remain available. The unit runs **one Uvicorn worker** through `current/venv/bin/python -m uvicorn`; a filesystem lock rejects concurrent media processes. Production code stays under `/opt` because the service's `ProtectHome=true` prevents running from the source checkout in `/home`.
+
+For local development, start manually:
 
 ```sh
 python3 -m venv .venv

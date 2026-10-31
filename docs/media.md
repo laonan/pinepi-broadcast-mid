@@ -145,7 +145,7 @@ All numeric settings must be positive integers. Multipart request overhead allow
 
 ## systemd and Nginx
 
-The supplied service uses `StateDirectory=pinepi-broadcast-mid`, `StateDirectoryMode=0700`, `UMask=0077` and a writable `/var/lib/pinepi-broadcast-mid`. Config stays read-only to the application. Set matching `ReadWritePaths`/ownership if moving `data_dir`. Application code is installed together with `media_store.py`; FFmpeg is installed for validation. Public transport must be HTTPS/WSS.
+Run `sudo bash install.sh` for initial installation, upgrades and environment repair; it preserves production config, prepares and validates a fresh release/virtualenv before switching, deploys web files and rolls back on readiness failure. See the [installer workflow](../README.md#install). The supplied service runs through `/opt/pinepi-broadcast-mid/current/venv/bin/python -m uvicorn` and uses `StateDirectory=pinepi-broadcast-mid`, `StateDirectoryMode=0700`, `UMask=0077` and a writable `/var/lib/pinepi-broadcast-mid`. Config stays read-only to the application. Set matching `ReadWritePaths`/ownership if moving `data_dir`. Application code is installed together with `media_store.py`; FFmpeg is installed for validation. Public transport must be HTTPS/WSS.
 
 Inside Nginx's TLS server (retain your certificate configuration):
 

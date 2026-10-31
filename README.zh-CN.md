@@ -18,9 +18,34 @@ python3 -c 'import base64,secrets; print(base64.b64encode(secrets.token_bytes(32
 sudo bash install.sh
 ```
 
-安装器创建独立服务用户，安装 Python 依赖及 FFmpeg，并启动 systemd 服务。配置位于 `/etc/pinepi-broadcast-mid/config.json`（0600）；持久数据位于 `/var/lib/pinepi-broadcast-mid/`（0700）。反向代理负责 HTTPS/WSS。必须运行**单个 Uvicorn worker**，不要启用 reload；文件锁会拒绝第二个进程访问同一媒体目录。
+**首次安装、升级和修复都使用同一个安装脚本**：
 
-手动启动：
+```sh
+cd /home/ubuntu/pinepi-broadcast-mid # 按实际源码目录调整
+git pull --ff-only
+sudo bash install.sh
+```
+
+如果 `/etc/pinepi-broadcast-mid/config.json` 已存在，脚本始终保留，即使源码目录里有其他 `config.json` 也不会覆盖。首次安装才读取源码目录中的配置；两处都没有时会创建受保护的模板并退出，填写后重新执行同一命令。不再提供“带占位凭证继续启动”的选项。已有凭证会校验，不会自动轮换或合并；旧配置没有 `media` 时保持媒体功能禁用，启用上传需要显式补充该节。
+
+每次执行都会将全部应用模块和网页资源准备到新的 `/opt/pinepi-broadcast-mid/releases/<release>/` 永久目录，并在其中创建**全新虚拟环境**，因此也能修复旧环境缺失或损坏的依赖。安装依赖、`pip check`、依赖导入和应用配置启动校验都在停止旧服务之前完成。脚本选择 Python 3.11–3.13，安装 FFmpeg，并在需要时安装对应的 venv 包，再以服务用户身份校验配置。找不到兼容 Python 时，会明确退出；使用发行版软件包安装后，可执行 `sudo bash install.sh --python /usr/bin/python3.12`，指定实际安装的版本。
+
+准备成功后，脚本切换 `/opt/pinepi-broadcast-mid/current`，安装并重新加载、启用 systemd unit，重启服务，等待本地无凭证 `POST /api/send` 返回 **401**。启动或就绪检查失败时恢复原 unit、版本链接及网页；原先正常运行的服务会重新启动。回滚无法修好部署前本就损坏的旧服务。切换前失败不会替换旧运行版本。准备好的版本和旧版本保留以便排查，只在不再需要回退时清理非活动版本。安装锁防止并发执行。重启仍会丢弃普通文本的内存离线缓冲；持久媒体投递从独立数据目录恢复。
+
+网页自动部署到 `/var/www/pinepi-broadcast-mid`，该路径链接至活动版本的网页专用目录，原目录或链接另存为旁边的 `.before-<release>`。若已有 Nginx 的**独立站点**静态目录，每次升级可用 `sudo bash install.sh --web-dir /现有站点静态目录`；不要指定与其他网站共用的目录。脚本不修改域名、TLS 证书及 Nginx 配置，现有 root/alias 指向该目录即可，或在 HTTPS server 中加入：
+
+```nginx
+location /demo/ {
+    alias /var/www/pinepi-broadcast-mid/;
+    index index.html;
+}
+```
+
+保留[部署说明](docs/media.zh-CN.md#systemd-与-nginx)中的 API、WebSocket、媒体代理规则，代理变更后执行 `sudo nginx -t` 和 `sudo systemctl reload nginx`。页面地址为 `https://你的Mid域名/demo/`，连接设置填写 `https://你的Mid域名/api/send` 和 Producer Token。
+
+配置仍位于 `/etc/pinepi-broadcast-mid/config.json`（0600），持久数据仍位于 `/var/lib/pinepi-broadcast-mid/`（0700），部署不会替换媒体数据。已有直接安装到 `/opt/pinepi-broadcast-mid` 的旧版也使用同一脚本迁移，旧文件和旧虚拟环境会保留。新 unit 通过 `current/venv/bin/python -m uvicorn` 运行**单个 worker**，文件锁拒绝并发媒体进程。生产代码保留在 `/opt`；service 的 `ProtectHome=true` 会阻止直接从 `/home` 源码目录运行。
+
+本地开发可手动启动：
 
 ```sh
 python3 -m venv .venv

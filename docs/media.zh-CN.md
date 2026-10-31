@@ -149,7 +149,7 @@ Mid 不抓取外部 URL，只在发布时拒绝非 HTTPS、用户密码信息、
 
 ## systemd 与 Nginx
 
-服务配置提供 `StateDirectory=pinepi-broadcast-mid`、`StateDirectoryMode=0700`、`UMask=0077` 及可写的 `/var/lib/pinepi-broadcast-mid`。配置目录对应用保持只读；移动数据目录时需同步修改属主和 `ReadWritePaths`。安装时同时复制 `media_store.py` 并安装 FFmpeg。公网必须使用 HTTPS/WSS。
+首次安装、升级和环境修复统一执行 `sudo bash install.sh`，保留生产配置，先准备并校验新版本和虚拟环境，再切换服务和网页，启动检查失败自动回退。详见[安装流程](../README.zh-CN.md#安装)。服务通过 `/opt/pinepi-broadcast-mid/current/venv/bin/python -m uvicorn` 运行，配置提供 `StateDirectory=pinepi-broadcast-mid`、`StateDirectoryMode=0700`、`UMask=0077` 及可写的 `/var/lib/pinepi-broadcast-mid`。配置目录对应用保持只读；移动数据目录时需同步修改属主和 `ReadWritePaths`。安装时同时复制 `media_store.py` 并安装 FFmpeg。公网必须使用 HTTPS/WSS。
 
 Nginx 的 TLS 虚拟主机参考配置如下，保留已有证书设置：
 

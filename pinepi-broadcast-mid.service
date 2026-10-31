@@ -6,8 +6,8 @@ After=network.target
 Type=simple
 User=pinepi-broadcast-mid
 Group=pinepi-broadcast-mid
-WorkingDirectory=/opt/pinepi-broadcast-mid
-ExecStart=/opt/pinepi-broadcast-mid/venv/bin/uvicorn broadcast_server_mid:app --host 127.0.0.1 --port 8765 --workers 1 --ws-max-size 65536
+WorkingDirectory=/opt/pinepi-broadcast-mid/current
+ExecStart=/opt/pinepi-broadcast-mid/current/venv/bin/python -m uvicorn broadcast_server_mid:app --host 127.0.0.1 --port 8765 --workers 1 --ws-max-size 65536
 Restart=always
 RestartSec=5
 
