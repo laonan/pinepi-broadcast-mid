@@ -49,6 +49,10 @@ curl https://mid.example.com/api/send -H "Authorization: Bearer $PRODUCER_TOKEN"
 
 `targets:["*"]` 选择 Producer 有权限的已配置设备。没有 `event` 的旧请求仍包装为 `{"event": body}`。普通文本离线缓冲保存在内存，每设备最多 200 条、2 MiB；私有媒体投递会持久化。
 
+[网页示例](examples/web/index.html)现已提供完整 PinePi Home v2 的 TEXT/PRIVATE、TEXT/TTS、IMAGE、AUDIO、VIDEO 示例。可选择 NORMAL、CRITICAL（需 Hub/终端 0.8.4+），或为较旧 v2 实现省略严重程度。表单按类型显示对应字段，校验内容，并支持 JSON 预览与复制。TTS 需要预先生成的正文 MP3 地址，网页不调用语音合成服务；音视频主体仍由用户手动播放。示例媒体 URL 需要替换为实际可访问、长期有效的 Hub 地址与文件，本示例不上传媒体，也不附带示例媒体文件。重试保持 ID，编辑消息生成新 ID；点击历史可恢复原完整消息重试，旧文本历史恢复为 PRIVATE。两个目标设备输入框下方都会显示可点击填入的历史设备名，当前浏览器最多保留 20 个不重复设备名。独立墨水屏裁剪发送功能保留。
+
+建议通过 Nginx 将静态页面托管在 Mid 同源，或由代理配置明确可信来源的 CORS；独立域名页面发送 Bearer 请求需要跨域许可。连接设置及近期消息仍保存在浏览器 localStorage。前端协议测试：`node --test tests/test_web_protocol.cjs`（Node 18+）。
+
 设备连接 `wss://mid.example.com/ws/` 后，五秒内发送 `{"device":"speaker","token":"DEVICE_TOKEN"}`。收到 `{"type":"ping"}` 后回复 `{"type":"pong"}`。新连接替换同设备旧连接。另见 [Python 订阅示例](examples/subscribe_demo.py) 和 [网页演示](examples/web/index.html)。
 
 独立墨水屏接口仍接受 Pillow 支持的常见图片，文件最大 1 MiB：

@@ -128,7 +128,7 @@ label {
   font-weight: 500;
 }
 
-input[type="text"], textarea {
+input[type="text"], input[type="password"], input[type="url"], select, textarea {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -141,7 +141,7 @@ input[type="text"], textarea {
   outline: none;
 }
 
-input[type="text"]:focus, textarea:focus {
+input:focus, select:focus, textarea:focus {
   border-color: var(--primary);
 }
 
@@ -374,6 +374,26 @@ textarea { resize: vertical; min-height: 80px; }
 [data-theme="dark"] .img-crop-hint {
   color: #a0a0a0;
 }
+[hidden] { display: none !important; }
+.hint { color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; margin-top: 6px; }
+.hint a { color: var(--primary); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.device-history { margin-top: 8px; }
+.device-history-label { color: var(--text-secondary); font-size: 0.75rem; margin-bottom: 6px; }
+.device-history-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.device-history-list button { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.preset-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 20px; }
+.preset-btn, .secondary-btn { border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; background: var(--input-bg); color: var(--text); cursor: pointer; font: inherit; font-size: 0.8rem; }
+.preset-btn:hover, .secondary-btn:hover { border-color: var(--primary); color: var(--primary); }
+.preset-btn:focus-visible, .secondary-btn:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.id-row { display: flex; align-items: center; gap: 8px; }
+.id-row input { min-width: 0; font-size: 0.8rem; }
+.id-row button { flex-shrink: 0; }
+.protocol-preview { margin: 16px 0; }
+.protocol-preview summary { cursor: pointer; color: var(--text-secondary); font-size: 0.85rem; }
+.protocol-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--input-bg); border: 1px solid var(--border); padding: 12px; margin: 10px 0; border-radius: 8px; font-size: 0.75rem; max-height: 360px; overflow-y: auto; }
+#severityHint { min-height: 3em; }
+@media (max-width: 360px) { .form-grid { grid-template-columns: 1fr; gap: 0; } }
 </style>
 </head>
 <body>
@@ -404,38 +424,113 @@ textarea { resize: vertical; min-height: 80px; }
         <input type="text" id="apiUrl" placeholder="https://your-domain/api/send">
       </div>
       <div class="form-group">
-        <label for="token">Bearer Token</label>
-        <input type="text" id="token" placeholder="your-secret-token">
+        <label for="token">Producer Bearer Token</label>
+        <input type="password" id="token" placeholder="your-producer-token" autocomplete="off">
+        <p class="hint">Settings and recent messages are stored in this browser.</p>
       </div>
     </div>
   </div>
 
-  <!-- Message Form -->
-  <div class="card">
-    <div class="card-title">New Message</div>
-    <div class="form-group">
-      <label for="devices">Target Devices (comma-separated, * for all)</label>
-      <input type="text" id="devices" placeholder="* 或 speaker,epaper">
+  <!-- PinePi Home v2 Message Form -->
+  <div class="card" id="messageCard">
+    <div class="card-title">PinePi Home · v2 message examples</div>
+    <p class="hint">Choose an example, replace the sample content and media address, then send.
+      <a href="https://github.com/laonan/pinepi-thinksmart-view/blob/main/docs/MESSAGE_PROTOCOL.zh-CN.md" target="_blank" rel="noopener noreferrer">Protocol / 协议</a>
+    </p>
+    <div class="preset-list" aria-label="Message examples">
+      <button type="button" class="preset-btn" data-preset="private">Text · PRIVATE</button>
+      <button type="button" class="preset-btn" data-preset="tts">Text · TTS</button>
+      <button type="button" class="preset-btn" data-preset="image">Image 图片</button>
+      <button type="button" class="preset-btn" data-preset="audio">Audio 音频</button>
+      <button type="button" class="preset-btn" data-preset="video">Video 视频</button>
+      <button type="button" class="preset-btn" data-preset="critical">CRITICAL example</button>
     </div>
     <div class="form-group">
-      <label for="title">Title</label>
-      <input type="text" id="title" placeholder="Message title">
-    </div>
-    <div class="form-group">
-      <label for="content">Content</label>
-      <textarea id="content" placeholder="Message content"></textarea>
-    </div>
-    <div class="form-group">
-      <div class="toggle-row">
-        <label style="margin-bottom:0">Play Immediately (for speaker)</label>
-        <label class="toggle">
-          <input type="checkbox" id="playNow">
-          <span class="toggle-slider"></span>
-        </label>
+      <label for="devices">Target Hubs / devices (comma-separated, * for all permitted)</label>
+      <input type="text" id="devices" placeholder="* or speaker,screen">
+      <div class="device-history" data-device-history="devices" hidden>
+        <div class="device-history-label">Recent devices · click to fill</div>
+        <div class="device-history-list" aria-label="Previously entered target devices"></div>
       </div>
     </div>
-    <button class="btn-send" id="sendBtn">Send</button>
-    <div class="status" id="status"></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="messageKind">Message type</label>
+        <select id="messageKind">
+          <option value="TEXT">TEXT · 文本</option>
+          <option value="IMAGE">IMAGE · 图片</option>
+          <option value="AUDIO">AUDIO · 音频</option>
+          <option value="VIDEO">VIDEO · 视频</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="severity">Severity 严重程度</label>
+        <select id="severity" aria-describedby="severityHint">
+          <option value="NORMAL">NORMAL · 普通</option>
+          <option value="CRITICAL">CRITICAL · 严重</option>
+          <option value="">Omit · before 0.8.4</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint" id="severityHint"></p>
+    <div class="form-group">
+      <label for="source">Source 来源 (required)</label>
+      <input type="text" id="source" maxlength="100" placeholder="家庭消息">
+    </div>
+    <div class="form-group">
+      <label for="title">Title 标题 (optional)</label>
+      <input type="text" id="title" maxlength="200" placeholder="Message title">
+    </div>
+    <div id="textFields">
+      <div class="form-group">
+        <label for="textMode">Text mode</label>
+        <select id="textMode" aria-describedby="modeHint">
+          <option value="PRIVATE">PRIVATE · Display privately, fixed arrival notice</option>
+          <option value="TTS">TTS · Display and read the text aloud</option>
+        </select>
+        <p class="hint" id="modeHint"></p>
+      </div>
+      <div class="form-group">
+        <label for="content">Text 正文 (required)</label>
+        <textarea id="content" maxlength="8192" placeholder="Message text"></textarea>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
+          <input type="checkbox" id="sameAsTitle">
+          <span>Same as title</span>
+        </label>
+      </div>
+      <div class="form-group" id="speechFields" hidden>
+        <label for="speechUrl">Text narration URL · MP3 (required for TTS)</label>
+        <input type="url" id="speechUrl" placeholder="http://192.168.31.36:8766/media/narration.mp3" maxlength="4096">
+        <p class="hint">Provide an MP3 of exactly the text above (audio/mpeg). This Mid demo does not synthesize speech. Title and source are not read aloud.</p>
+      </div>
+    </div>
+    <div id="mediaFields" hidden>
+      <div class="form-group">
+        <label for="mediaUrl">Media URL (required)</label>
+        <input type="url" id="mediaUrl" placeholder="http://192.168.31.36:8766/media/example.jpg" maxlength="4096">
+        <p class="hint">Use a direct URL reachable from the terminal. Sample files are placeholders; replace the Hub IP and filename. HTTPS or HTTP on a private IPv4 address is supported.</p>
+      </div>
+      <div class="form-group">
+        <label for="mimeType">Media MIME type</label>
+        <select id="mimeType"></select>
+      </div>
+      <p class="hint" id="mediaHint"></p>
+    </div>
+    <div class="form-group" style="margin-top:16px">
+      <label for="messageId">Message ID</label>
+      <div class="id-row">
+        <input type="text" id="messageId" readonly>
+        <button type="button" class="secondary-btn" id="newMessageId">New ID</button>
+      </div>
+      <p class="hint">Retries keep the same ID. Editing the message or choosing New ID creates a new message. A saved-message ACK does not mean media was downloaded or played.</p>
+    </div>
+    <details class="protocol-preview">
+      <summary>Request JSON preview</summary>
+      <pre id="payloadPreview"></pre>
+      <button type="button" class="secondary-btn" id="copyPayload">Copy JSON</button>
+    </details>
+    <button type="button" class="btn-send" id="sendBtn">Send message</button>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
   </div>
 
   <!-- E-paper Image Send -->
@@ -444,6 +539,10 @@ textarea { resize: vertical; min-height: 80px; }
     <div class="form-group">
       <label for="imgTargets">Target Devices (comma-separated, * for all)</label>
       <input type="text" id="imgTargets" placeholder="* 或 epaper">
+      <div class="device-history" data-device-history="imgTargets" hidden>
+        <div class="device-history-label">Recent devices · click to fill</div>
+        <div class="device-history-list" aria-label="Previously entered e-paper target devices"></div>
+      </div>
     </div>
     <div class="form-group">
       <label>Image File (auto-crop & resize to 250×122)</label>
@@ -487,6 +586,7 @@ textarea { resize: vertical; min-height: 80px; }
 
 <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
 
+<script src="message-protocol.js"></script>
 <script>
 // --- Theme ---
 const themeButtons = document.querySelectorAll('.theme-btn');
@@ -529,117 +629,303 @@ apiUrlInput.addEventListener('input', () => localStorage.setItem('apiUrl', apiUr
 tokenInput.addEventListener('input', () => localStorage.setItem('token', tokenInput.value.trim()));
 devicesInput.addEventListener('input', () => localStorage.setItem('devices', devicesInput.value.trim()));
 
-// --- History ---
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem('msgHistory') || '[]'); }
-  catch { return []; }
-}
+// Remember complete device names when an edit is committed, not on every keystroke.
+let recentDevices = [];
+try {
+  const saved = JSON.parse(localStorage.getItem('deviceHistory') || '[]');
+  if (Array.isArray(saved)) recentDevices = [...new Set(saved.filter(name =>
+    typeof name === 'string'
+  ).map(name => name.trim()).filter(name => name && name !== '*' && name.length <= 128))].slice(0, 20);
+} catch { /* An invalid history must not prevent composing a message. */ }
 
-function saveHistory(list) {
-  localStorage.setItem('msgHistory', JSON.stringify(list.slice(0, 20)));
-}
-
-function renderHistory() {
-  const list = getHistory();
-  const el = document.getElementById('history');
-  if (!list.length) {
-    el.innerHTML = '<div class="history-empty">No records</div>';
-    return;
-  }
-  el.innerHTML = list.map((m, i) => `
-    <div class="history-item" data-index="${i}">
-      <div class="history-title">${escapeHtml(m.title)}</div>
-      <div class="history-content">${escapeHtml(m.content)}</div>
-    </div>
-  `).join('');
-  el.querySelectorAll('.history-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const m = list[parseInt(item.dataset.index)];
-      document.getElementById('title').value = m.title;
-      document.getElementById('content').value = m.content;
-      document.getElementById('playNow').checked = !!m.play_now;
+function renderDeviceHistory() {
+  document.querySelectorAll('[data-device-history]').forEach(container => {
+    const list = container.querySelector('.device-history-list');
+    list.replaceChildren();
+    container.hidden = recentDevices.length === 0;
+    recentDevices.forEach(name => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'secondary-btn';
+      button.textContent = name;
+      // Keep focus until click so committing the input cannot remove the pressed button.
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => {
+        const input = document.getElementById(container.dataset.deviceHistory);
+        rememberDeviceNames(input.value);
+        input.value = name;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.focus();
+      });
+      list.append(button);
     });
   });
 }
 
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+function rememberDeviceNames(value) {
+  const names = [...new Set(value.split(',').map(name => name.trim())
+    .filter(name => name && name !== '*' && name.length <= 128))];
+  recentDevices = [...names, ...recentDevices.filter(name => !names.includes(name))].slice(0, 20);
+  try { localStorage.setItem('deviceHistory', JSON.stringify(recentDevices)); } catch { /* Storage may be unavailable. */ }
+  renderDeviceHistory();
 }
 
-// Load latest message as default
-const history = getHistory();
-if (history.length) {
-  document.getElementById('title').value = history[0].title || '';
-  document.getElementById('content').value = history[0].content || '';
-  document.getElementById('playNow').checked = !!history[0].play_now;
+// Migrate the last-entered values retained by earlier versions of this page.
+rememberDeviceNames([devicesInput.value, localStorage.getItem('imgTargets') || ''].join(','));
+devicesInput.addEventListener('change', () => rememberDeviceNames(devicesInput.value));
+devicesInput.addEventListener('blur', () => rememberDeviceNames(devicesInput.value));
+
+
+// --- Same as title checkbox ---
+const titleInput = document.getElementById('title');
+const contentInput = document.getElementById('content');
+const sameAsTitleCheckbox = document.getElementById('sameAsTitle');
+let syncEnabled = false;
+
+function syncContentToTitle() {
+  if (!syncEnabled) return;
+  const title = titleInput.value.trim();
+  const content = contentInput.value.trim();
+  // If one is empty and other has content, fill the empty one
+  // If both empty, do nothing
+  // If both have content, sync title to content
+  if (title && !content) {
+    contentInput.value = title;
+  } else if (!title && content) {
+    titleInput.value = content;
+  } else if (title && content) {
+    contentInput.value = titleInput.value;
+  }
 }
-renderHistory();
 
-document.getElementById('clearHistory').addEventListener('click', () => {
-  if (!getHistory().length) return;
-  saveHistory([]);
-  renderHistory();
-});
-
-// --- Send ---
-const sendBtn = document.getElementById('sendBtn');
-const statusEl = document.getElementById('status');
-
-sendBtn.addEventListener('click', async () => {
-  const url = localStorage.getItem('apiUrl');
-  const token = localStorage.getItem('token');
-  const devicesRaw = (localStorage.getItem('devices') || '*').trim();
-  const targets = devicesRaw === '*' ? ['*'] : devicesRaw.split(',').map(s => s.trim()).filter(Boolean);
-  const title = document.getElementById('title').value.trim();
-  const content = document.getElementById('content').value.trim();
-  const playNow = document.getElementById('playNow').checked ? 1 : 0;
-
-  if (!url) { showStatus('error', 'Please fill in API URL in settings'); return; }
-  if (!token) { showStatus('error', 'Please fill in Token in settings'); return; }
-  if (!targets.length) { showStatus('error', 'Please fill in target devices'); return; }
-  if (!title || !content) { showStatus('error', 'Title and content cannot be empty'); return; }
-
-  sendBtn.disabled = true;
-  sendBtn.textContent = 'Sending...';
-  statusEl.className = 'status';
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ targets, event: { title, content, play_now: playNow } })
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`${res.status} ${text}`);
-    }
-
-    const result = await res.json();
-    showStatus('success', `Sent successfully ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'})`);
-
-    // Save to history
-    const list = getHistory();
-    list.unshift({ title, content, play_now: playNow, time: new Date().toLocaleString() });
-    saveHistory(list);
-    renderHistory();
-  } catch (e) {
-    showStatus('error', `Send failed: ${e.message}`);
-  } finally {
-    sendBtn.disabled = false;
-    sendBtn.textContent = 'Send';
+sameAsTitleCheckbox.addEventListener('change', () => {
+  if (sameAsTitleCheckbox.checked) {
+    syncEnabled = true;
+    syncContentToTitle();
+  } else {
+    syncEnabled = false;
   }
 });
 
-function showStatus(type, msg) {
+titleInput.addEventListener('input', syncContentToTitle);
+
+// If user types in content and it becomes different from title, uncheck the sync in real-time
+contentInput.addEventListener('input', () => {
+  if (syncEnabled && titleInput.value !== contentInput.value) {
+    sameAsTitleCheckbox.checked = false;
+    syncEnabled = false;
+  }
+});
+
+// --- Protocol-driven message composer ---
+const kindInput = document.getElementById('messageKind');
+const severityInput = document.getElementById('severity');
+const sourceInput = document.getElementById('source');
+const textModeInput = document.getElementById('textMode');
+const mediaUrlInput = document.getElementById('mediaUrl');
+const mimeTypeInput = document.getElementById('mimeType');
+const speechUrlInput = document.getElementById('speechUrl');
+const messageIdInput = document.getElementById('messageId');
+const previewEl = document.getElementById('payloadPreview');
+const sendBtn = document.getElementById('sendBtn');
+const statusEl = document.getElementById('status');
+let messageIdentity;
+let statusTimeout;
+
+function newIdentity() {
+  const random = new Uint32Array(3);
+  crypto.getRandomValues(random);
+  messageIdentity = { id: `web-${Date.now().toString(36)}-${Array.from(random, n => n.toString(16).padStart(8, '0')).join('')}`, createdAt: new Date().toISOString() };
+  messageIdInput.value = messageIdentity.id;
+}
+
+function readDraft() {
+  return { kind: kindInput.value, severity: severityInput.value, source: sourceInput.value,
+    title: titleInput.value, text: contentInput.value, textMode: textModeInput.value,
+    speechUrl: speechUrlInput.value, mediaUrl: mediaUrlInput.value, mimeType: mimeTypeInput.value };
+}
+
+function readTargets() {
+  return devicesInput.value.split(',').map(t => t.trim()).filter(Boolean);
+}
+
+function updateFields() {
+  const kind = kindInput.value;
+  const isText = kind === 'TEXT';
+  document.getElementById('textFields').hidden = !isText;
+  document.getElementById('mediaFields').hidden = isText;
+  document.getElementById('speechFields').hidden = !isText || textModeInput.value !== 'TTS';
+  document.getElementById('modeHint').textContent = textModeInput.value === 'PRIVATE'
+    ? 'PRIVATE: show the text and play only the fixed local notice. Never send the title or text to a third-party speech service.'
+    : 'TTS: read the text from the supplied MP3 when sound protection allows. There is no separate text arrival notice.';
+  document.getElementById('severityHint').textContent = severityInput.value === 'CRITICAL'
+    ? 'CRITICAL is for credible major safety risks. It does not override privacy, Bluetooth sound protection, volume or playback rules.'
+    : severityInput.value === 'NORMAL'
+      ? 'NORMAL is for everyday messages. Explicit severity requires Hub and terminal 0.8.4 or later.'
+      : 'Severity will be omitted for older strict v2 implementations; the message defaults to NORMAL.';
+  const options = PinePiProtocol.MIME[kind] || [];
+  const previousMime = mimeTypeInput.value;
+  mimeTypeInput.replaceChildren(...options.map(mime => {
+    const option = document.createElement('option');
+    option.value = mime;
+    option.textContent = mime;
+    return option;
+  }));
+  if (options.includes(previousMime)) mimeTypeInput.value = previousMime;
+  const hints = {
+    IMAGE: 'JPEG / PNG, up to 8 MiB at the terminal. Display on arrival with a fixed image notice; no image-content narration.',
+    AUDIO: 'MP3 (audio/mpeg), up to 16 MiB at the terminal. Fixed arrival notice; the main audio plays only when tapped.',
+    VIDEO: 'MP4, preferably H.264 + AAC. Fixed arrival notice; video plays only when tapped. Use a direct URL without redirects.'
+  };
+  document.getElementById('mediaHint').textContent = hints[kind] || '';
+}
+
+function renderPreview() {
+  try {
+    previewEl.textContent = JSON.stringify(PinePiProtocol.buildRequest(readDraft(), messageIdentity, readTargets()), null, 2);
+  } catch (error) {
+    previewEl.textContent = `Complete the message to preview JSON: ${error.message}`;
+  }
+}
+
+function applyDraft(draft, identity) {
+  kindInput.value = draft.kind || 'TEXT';
+  severityInput.value = draft.severity === undefined ? 'NORMAL' : draft.severity;
+  sourceInput.value = draft.source || 'Web demo';
+  titleInput.value = draft.title || '';
+  contentInput.value = draft.text || '';
+  textModeInput.value = draft.textMode || 'PRIVATE';
+  speechUrlInput.value = draft.speechUrl || '';
+  mediaUrlInput.value = draft.mediaUrl || '';
+  sameAsTitleCheckbox.checked = false;
+  syncEnabled = false;
+  updateFields();
+  if (draft.mimeType) mimeTypeInput.value = draft.mimeType;
+  if (identity) {
+    messageIdentity = identity;
+    messageIdInput.value = identity.id;
+  } else {
+    newIdentity();
+  }
+  statusEl.className = 'status';
+  renderPreview();
+}
+
+// Changing a draft must not reuse an accepted terminal ID for different content.
+document.getElementById('messageCard').addEventListener('input', () => {
+  updateFields();
+  newIdentity();
+  renderPreview();
+});
+document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click', () => {
+  applyDraft(PinePiProtocol.PRESETS[button.dataset.preset]);
+}));
+document.getElementById('newMessageId').addEventListener('click', () => { newIdentity(); renderPreview(); });
+// Sync may populate a second field during checkbox change; preview the final values.
+sameAsTitleCheckbox.addEventListener('change', () => { newIdentity(); renderPreview(); });
+
+// --- History (read old text records, store complete v2 events) ---
+function getHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem('msgHistory') || '[]');
+    return Array.isArray(value) ? value.filter(m => m && typeof m === 'object').slice(0, 20) : [];
+  } catch { return []; }
+}
+function saveHistory(list) { localStorage.setItem('msgHistory', JSON.stringify(list.slice(0, 20))); }
+function eventDraft(event) {
+  return { kind: event.kind, severity: event.severity || '', source: event.source, title: event.title,
+    text: event.text, textMode: event.text_mode, speechUrl: event.speech?.url,
+    mediaUrl: event.media?.url, mimeType: event.media?.mime_type };
+}
+function restoreRecord(record) {
+  if (record.event?.version === 2) {
+    applyDraft(eventDraft(record.event), { id: record.event.id, createdAt: record.event.created_at });
+  } else {
+    // Old play_now has no v2 equivalent: restore old text as PRIVATE, without speech.
+    applyDraft({ kind: 'TEXT', severity: 'NORMAL', source: 'Web demo', title: record.title, text: record.content, textMode: 'PRIVATE' });
+  }
+}
+function renderHistory() {
+  const el = document.getElementById('history');
+  const list = getHistory();
+  el.replaceChildren();
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = 'No records';
+    el.append(empty);
+    return;
+  }
+  for (const record of list) {
+    const event = record.event || {};
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'history-item';
+    item.style.cssText = 'display:block;width:100%;text-align:left;background:none;color:inherit;border-top:0;border-left:0;border-right:0;font:inherit';
+    const title = document.createElement('div');
+    title.className = 'history-title';
+    title.textContent = `${event.kind || 'TEXT'} · ${event.title || record.title || '(Untitled)'}`;
+    const content = document.createElement('div');
+    content.className = 'history-content';
+    content.textContent = event.text || event.media?.url || record.content || '';
+    item.append(title, content);
+    item.addEventListener('click', () => { restoreRecord(record); titleInput.focus(); });
+    el.append(item);
+  }
+}
+const recentMessages = getHistory();
+if (recentMessages.length) restoreRecord(recentMessages[0]);
+else applyDraft(PinePiProtocol.PRESETS.private);
+renderHistory();
+document.getElementById('clearHistory').addEventListener('click', () => { saveHistory([]); renderHistory(); });
+
+// --- Preview / send ---
+document.getElementById('copyPayload').addEventListener('click', async () => {
+  try {
+    const request = PinePiProtocol.buildRequest(readDraft(), messageIdentity, readTargets());
+    await navigator.clipboard.writeText(JSON.stringify(request, null, 2));
+    showStatus('success', 'JSON copied.');
+  } catch (error) { showStatus('error', `Copy failed: ${error.message}`); }
+});
+sendBtn.addEventListener('click', async () => {
+  let request;
+  const url = apiUrlInput.value.trim();
+  const token = tokenInput.value.trim();
+  try {
+    if (!url) throw new Error('Fill in the Mid API URL in connection settings.');
+    const endpoint = new URL(url);
+    if (!['https:', 'http:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.hash || !/^\/api\/send\/?$/.test(endpoint.pathname)) {
+      throw new Error('Use the Broadcast Mid /api/send endpoint.');
+    }
+    if (!token) throw new Error('Fill in a Producer Token in connection settings.');
+    request = PinePiProtocol.buildRequest(readDraft(), messageIdentity, readTargets());
+  } catch (error) { showStatus('error', error.message); return; }
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending...';
+  statusEl.className = 'status';
+  try {
+    const response = await fetch(url, { method: 'POST', redirect: 'error',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(request) });
+    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+    const result = await response.json();
+    showStatus('success', `Mid accepted ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'}). This does not confirm terminal playback.`);
+    const list = getHistory().filter(record => record.event?.id !== request.event.id);
+    list.unshift({ event: request.event, time: new Date().toISOString() });
+    saveHistory(list);
+    renderHistory();
+  } catch (error) {
+    showStatus('error', `Send failed: ${error.message}. Retry unchanged to keep the same message ID.`);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send message';
+  }
+});
+function showStatus(type, message) {
+  clearTimeout(statusTimeout);
   statusEl.className = `status ${type}`;
-  statusEl.textContent = msg;
-  setTimeout(() => { statusEl.className = 'status'; }, 5000);
+  statusEl.textContent = message;
+  statusTimeout = setTimeout(() => { statusEl.className = 'status'; }, 10000);
 }
 
 // --- E-paper image send with Cropper.js ---
@@ -661,6 +947,8 @@ let originalFileName = '';
 
 imgTargetsInput.value = localStorage.getItem('imgTargets') || '*';
 imgTargetsInput.addEventListener('input', () => localStorage.setItem('imgTargets', imgTargetsInput.value.trim()));
+imgTargetsInput.addEventListener('change', () => rememberDeviceNames(imgTargetsInput.value));
+imgTargetsInput.addEventListener('blur', () => rememberDeviceNames(imgTargetsInput.value));
 
 // Open cropper when file selected
 imgFile.addEventListener('change', () => {

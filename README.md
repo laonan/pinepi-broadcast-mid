@@ -47,6 +47,10 @@ curl https://mid.example.com/api/send -H "Authorization: Bearer $PRODUCER_TOKEN"
 
 `targets:["*"]` selects the Producer's permitted configured devices. Legacy requests without `event` are wrapped as `{"event": body}`. Ordinary text messages have an in-memory offline buffer (200 messages / 2 MiB per device); media deliveries have durable pending state.
 
+The [web demo](examples/web/index.html) includes complete PinePi Home v2 examples for TEXT/PRIVATE, TEXT/TTS, IMAGE, AUDIO and VIDEO. Choose NORMAL or CRITICAL (Hub/terminal 0.8.4+), or omit severity for older v2 implementations. The form shows only fields belonging to the selected type, validates the payload, and offers a JSON preview/copy. TTS requires a pre-generated narration MP3 URL; this demo does not call a speech service. Audio/video playback remains manual. Replace example Hub addresses and filenames with reachable, persistent media URLs; examples do not upload media or include sample media files. Retries preserve IDs, and editing the message generates a new ID. Recent messages restore the original complete event for retry; old text history restores as PRIVATE. Previously entered target device names appear as clickable shortcuts below both target fields, with up to 20 unique names retained in this browser. The e-paper crop/send tool remains separate.
+
+Host the static demo on the same origin as Mid (for example via Nginx), or configure explicit trusted-origin CORS in your proxy. A separately hosted page requires CORS for Bearer-authenticated requests. Browser settings and recent messages remain in localStorage. Frontend protocol checks: `node --test tests/test_web_protocol.cjs` (Node 18+).
+
 Connect to `wss://mid.example.com/ws/` and send `{"device":"speaker","token":"DEVICE_TOKEN"}` within five seconds. Reply to `{"type":"ping"}` with `{"type":"pong"}`. A second connection replaces the first. See [Python subscriber](examples/subscribe_demo.py) and [web demo](examples/web/index.html).
 
 The independent device adapter still accepts common Pillow-supported image formats, up to 1 MiB:
