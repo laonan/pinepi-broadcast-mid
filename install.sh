@@ -44,7 +44,7 @@ done
 for command_name in apt-get systemctl flock; do
     command -v "$command_name" >/dev/null || { echo "ERROR: Missing $command_name (Debian/Ubuntu with systemd required)." >&2; exit 1; }
 done
-for source_file in python/broadcast_server_mid.py python/media_store.py python/deploy_check.py requirements.txt config.json.example pinepi-broadcast-mid.service examples/web/index.html examples/web/message-protocol.js; do
+for source_file in python/broadcast_server_mid.py python/media_store.py python/identities.py python/deploy_check.py requirements.txt config.json.example pinepi-broadcast-mid.service examples/web/index.html examples/web/message-protocol.js; do
     [[ -f "$SCRIPT_DIR/$source_file" ]] || { echo "ERROR: Missing $source_file. Run install.sh from a complete git clone." >&2; exit 1; }
 done
 
@@ -84,6 +84,21 @@ for candidate in "${candidates[@]}"; do
     PYTHON_BIN=""
 done
 [[ -n "$PYTHON_BIN" ]] || { echo "ERROR: Install Python 3.11–3.13 and its matching venv package, then rerun with --python /path/to/python." >&2; exit 1; }
+
+# Identity schema has no third-party dependencies. Reject outdated/ambiguous
+# configuration before apt/pip work; full startup is checked in the new venv.
+"$PYTHON_BIN" - "$SCRIPT_DIR/python" "$CONFIG_DST" <<'PYCONFIG'
+import json
+import sys
+sys.path.insert(0, sys.argv[1])
+from identities import Identities, unique_object
+try:
+    with open(sys.argv[2], encoding="utf-8") as stream:
+        Identities(json.load(stream, object_pairs_hook=unique_object))
+except (RuntimeError, ValueError, OSError) as error:
+    print(f"ERROR: {error}. Update the identity sections in {sys.argv[2]} using config.json.example.", file=sys.stderr)
+    raise SystemExit(1)
+PYCONFIG
 
 # A release keeps its permanent path, including its virtualenv: moving a venv
 # after installation would invalidate scripts containing absolute shebangs.

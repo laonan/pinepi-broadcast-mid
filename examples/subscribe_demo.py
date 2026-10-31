@@ -2,8 +2,8 @@ import asyncio, json, websockets
 
 async def main():
     async with websockets.connect("wss://domain.com/ws/") as ws:
-        # Step 1: authenticate
-        await ws.send(json.dumps({"token": "yourtoken", "device": "epaper"}))
+        # Step 1: use the device ID (the devices key), not its description.
+        await ws.send(json.dumps({"token": "YOUR_DEVICE_TOKEN", "device": "epaper"}))
 
         # Step 2: receive messages
         async for message in ws:

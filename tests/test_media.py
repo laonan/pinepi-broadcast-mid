@@ -18,8 +18,8 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 # Import-time legacy config, intentionally separate Producer and Device credentials.
 config_path = Path('/tmp') / ('pinepi-test-' + secrets.token_hex(8) + '.json')
-config_path.write_text(json.dumps({'producers': {'producer': {'targets': '*'}, 'limited': {'targets': ['a']}, 'other': {'targets': '*'}},
-                                   'devices': {'a': {'token': 'device-a'}, 'b': {'token': 'device-b'}}}))
+config_path.write_text(json.dumps({'producers': {'web-console': {'description': 'Web console', 'token': 'producer', 'targets': '*'}, 'limited-sender': {'token': 'limited', 'targets': ['a']}, 'other-sender': {'token': 'other', 'targets': '*'}},
+                                   'devices': {'a': {'description': 'First Hub', 'token': 'device-a'}, 'b': {'description': 'Second Hub', 'token': 'device-b'}}}))
 os.environ['PINEPI_BROADCAST_CONFIG'] = str(config_path)
 import broadcast_server_mid as server
 config_path.unlink()
@@ -354,3 +354,34 @@ def test_upload_timeout_pixel_limit_and_restart_rate(client):
         assert error.value.status_code == 408
     asyncio.run(check())
     assert not list(server.MEDIA.root.glob('.upload-*'))
+
+
+def test_producer_token_rotation_preserves_asset_permissions_and_quotas(client, monkeypatch):
+    import copy
+    from identities import Identities
+    m = upload(client, targets='a').json()
+    meta = server.MEDIA.assets[m['media_id']]
+    assert meta['producer_id'] == 'web-console'
+    assert meta['owner'] == server.MEDIA.owner('web-console')
+    assert meta['owner'] != hashlib.sha256(b'producer').hexdigest()
+    assert publish(client, m, ['a']).status_code == 200
+    assert server.PRODUCER_RATE_LIMITS['web-console'].count == 1
+    before_rate = dict(server.MEDIA.rates)
+    cfg = copy.deepcopy(server._config)
+    cfg['producers']['web-console']['token'] = 'rotated-producer'
+    cfg['producers']['web-console']['description'] = 'A clearer console description'
+    cfg['devices']['a']['description'] = 'Renamed description, same device ID'
+    monkeypatch.setattr(server, 'IDENTITIES', Identities(cfg))
+    assert publish(client, m, ['a'], token='producer').status_code == 401
+    assert publish(client, m, ['a'], token='web-console').status_code == 401
+    assert publish(client, m, ['a'], token='rotated-producer').status_code == 200
+    assert server.PRODUCER_RATE_LIMITS['web-console'].count == 2
+    assert 'rotated-producer' not in server.PRODUCER_RATE_LIMITS
+    assert publish(client, m, ['a'], token='other').status_code == 404
+    assert ticket(client, m).status_code == 200
+    store_cfg = dict(server.MEDIA.cfg)
+    store_cfg['uploads_per_minute'] = 1
+    server.MEDIA.close()
+    server.MEDIA = MediaStore(store_cfg)
+    assert server.MEDIA.rates == before_rate
+    assert upload(client, targets='a', token='rotated-producer').status_code == 429

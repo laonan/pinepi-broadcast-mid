@@ -58,7 +58,43 @@ For local development choose a writable `media.data_dir`; download URLs still us
 
 ## Identities
 
-`producers` maps Producer Tokens to `{"targets":"*"}` or `{"targets":["speaker"]}`. `devices` maps device names to `{"token":"DEVICE_TOKEN"}`. **Device Tokens must be unique and separate from Producer Tokens**; configurations that reused a token must be migrated. Optional producer `id` is a stable, unique identity for ownership across token rotation. Otherwise ownership is the SHA-256 of the Producer Token. Never give different producers the same `id`.
+Both sections are keyed by stable, meaningful IDs. A Producer represents a sending application/integration; a Device represents a receiving Hub or adapter. Identity configuration example (keep your separate `media` section):
+
+```json
+{
+  "producers": {
+    "web-console": {
+      "description": "Manual messages from the web console",
+      "token": "REPLACE_WITH_PRODUCER_WEB_TOKEN",
+      "targets": "*"
+    },
+    "morning-news": {
+      "description": "Scheduled morning news",
+      "token": "REPLACE_WITH_PRODUCER_NEWS_TOKEN",
+      "targets": ["speaker"]
+    }
+  },
+  "devices": {
+    "speaker": {
+      "description": "Living-room Hub",
+      "token": "REPLACE_WITH_DEVICE_SPEAKER_TOKEN"
+    },
+    "epaper": {
+      "description": "Kitchen e-paper display",
+      "token": "REPLACE_WITH_DEVICE_EPAPER_TOKEN"
+    }
+  }
+}
+```
+
+- Mapping keys (`web-console`, `speaker`) are stable identity IDs, at most 128 characters without whitespace/control characters. Producer IDs determine asset ownership and quota identity; device IDs are used in `targets`, WebSocket `device` and ticket binding. Keep them stable.
+- `token` is required: a nonempty printable ASCII credential without whitespace. Every Producer Token and Device Token must be unique, including across roles. IDs are not credentials; send the token value, never the mapping key, as the HTTP Bearer credential.
+- `description` is optional explanatory text (maximum 500 characters; defaults to empty). It can change without affecting identity, permissions or media. It is not sent to terminals or used for authentication.
+- Producer `targets` is required: `"*"` for all configured devices, or an array of exact device IDs. An empty array grants no targets. Devices have no upload/publish permissions.
+
+Token-keyed Producer configuration and per-entry legacy `id` overrides are **not supported**. Unknown identity fields, duplicate JSON keys, duplicate credentials and unknown ACL targets fail startup. Before upgrading, restructure `producers` in `/etc/pinepi-broadcast-mid/config.json` using the new example; preserve device IDs and distinct token values if keeping existing clients. The installer preserves production config and never converts or overwrites it. It validates the identity schema before dependency downloads, then performs full application startup validation before switching services.
+
+Rotating `producers.<id>.token` under the same key preserves ownership, content-capacity accounting and durable upload-rate state. Normal JSON rate counters also use the Producer ID, but remain in memory and reset on process restart. Changing a Producer ID creates a different identity. New metadata records `producer_id` and an `owner` hash derived from that ID; no ownership fallback to credential hashes is performed. Old assets whose owner was derived from a token are not automatically reassigned. If the old configuration already used an explicit stable `id`, using that value as the new mapping key preserves its owner hash.
 
 HTTP uses `Authorization: Bearer …`. Producers upload and publish; Device Tokens connect, download, refresh tickets and confirm caching. A separate random signing key of at least 32 bytes signs HS256 download tickets, stays on Mid, and is never a credential for uploads. Configuration changes require restart. The [media protocol](docs/media.md) specifies permissions, quotas, lifecycle and Hub responsibilities.
 

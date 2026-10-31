@@ -58,7 +58,43 @@ PINEPI_BROADCAST_CONFIG="$PWD/config.json" .venv/bin/uvicorn broadcast_server_mi
 
 ## 身份与权限
 
-`producers` 以 Producer Token 为键，值为 `{"targets":"*"}` 或 `{"targets":["speaker"]}`；`devices` 以设备名为键，值为 `{"token":"DEVICE_TOKEN"}`。**各设备的 Token 必须唯一，且不能与 Producer Token 共用**；沿用旧示例共用凭证的部署需要先迁移。Producer 可配置唯一且稳定的 `id`，用于轮换 Token 后保留资产归属；没有 `id` 时使用 Token 的 SHA-256。不同 Producer 不得共用 `id`。
+两个配置节都使用稳定、可读的 ID 作为键。Producer 代表发送消息的应用或集成，Device 代表接收消息的 Hub 或设备适配器。身份配置示例（保留原有独立 `media` 配置）：
+
+```json
+{
+  "producers": {
+    "web-console": {
+      "description": "手动发送消息的网页控制台",
+      "token": "REPLACE_WITH_PRODUCER_WEB_TOKEN",
+      "targets": "*"
+    },
+    "morning-news": {
+      "description": "每天推送早间新闻的自动化程序",
+      "token": "REPLACE_WITH_PRODUCER_NEWS_TOKEN",
+      "targets": ["speaker"]
+    }
+  },
+  "devices": {
+    "speaker": {
+      "description": "客厅 Hub",
+      "token": "REPLACE_WITH_DEVICE_SPEAKER_TOKEN"
+    },
+    "epaper": {
+      "description": "厨房墨水屏适配器",
+      "token": "REPLACE_WITH_DEVICE_EPAPER_TOKEN"
+    }
+  }
+}
+```
+
+- 键名（如 `web-console`、`speaker`）就是稳定身份 ID，最多 128 个字符，不能含空白或控制字符。Producer ID 决定资产归属和配额身份；Device ID 用于 `targets`、WebSocket 的 `device` 及票据绑定，创建后应保持稳定。
+- `token` 必填，为非空、无空白的可打印 ASCII 凭证。各 Producer 和 Device 的 Token 必须全局唯一，不能跨身份类型共用。ID 不代替凭证，HTTP Bearer 中填写 `token` 的值。
+- `description` 为可选用途说明，最多 500 个字符，省略时为空。修改说明不改变身份、权限或媒体归属，不参与鉴权，也不会下发给终端。
+- Producer 的 `targets` 必填：`"*"` 表示全部已配置设备，数组填写实际 Device ID，空数组表示没有目标权限。Device 不获得上传或发布权限。
+
+**不支持以 Token 为键的旧 Producer 结构，也不支持条目内旧的 `id` 覆盖字段。** 未知身份字段、重复 JSON 键、重复凭证和不存在的权限目标都会导致校验失败。升级前，请按新示例调整 `/etc/pinepi-broadcast-mid/config.json` 中的身份配置；保持 Device ID 和原本已分离的 Token 不变即可继续使用现有客户端。安装器保留生产配置，不自动转换或覆盖，并会在下载依赖前先检查身份结构，再在切换服务前完成应用启动校验。
+
+同一个 `producers.<id>` 下更换 `token`，资产归属、内容容量统计和持久上传频率状态保持不变。普通 JSON 发布频率也按 Producer ID 计数，但保存在内存，进程重启时重置。更换键名则视为新的 Producer。新元数据记录可读的 `producer_id`，`owner` 为该 ID 的哈希，不回退使用凭证哈希识别身份。旧资产若按 Token 计算归属，不会自动转移；若旧配置已使用显式稳定 `id`，将其作为新键名可以保持相同归属哈希。
 
 HTTP 使用 `Authorization: Bearer …`。Producer 只能上传和发布；Device 负责连接、下载、刷新票据和确认缓存。独立随机签名密钥至少 32 字节，只在 Mid 保存，用于 HS256 票据签名，不能代替上传凭证。配置变更后重启服务。
 

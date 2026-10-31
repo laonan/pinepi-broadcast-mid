@@ -111,9 +111,9 @@ class MediaStore:
         self.lockfile.close()
 
     @staticmethod
-    def owner(token, producer):
-        # An optional stable producer ID supports token rotation. No plaintext credential on disk.
-        return hashlib.sha256(str(producer.get("id", token)).encode()).hexdigest()
+    def owner(producer_id):
+        # Ownership and persisted upload quotas are derived only from stable identity.
+        return hashlib.sha256(producer_id.encode()).hexdigest()
 
     def disk_bytes(self):
         # Include metadata, tombstones and orphaned files in the global quota.
@@ -181,7 +181,8 @@ class MediaStore:
         if claims["sub"] != media_id or claims["device"] != device or claims["purpose"] != "media.download":
             fail(403, "Media ticket binding mismatch")
 
-    def publish(self, ids, owner, targets, event):
+    def publish(self, ids, producer_id, targets, event):
+        owner = self.owner(producer_id)
         with self.lock:
             metas = [copy.deepcopy(self.get(i, owner=owner)) for i in ids]
             if len(ids) != len(set(ids)) or not ids:
@@ -289,7 +290,8 @@ class MediaStore:
                 if (path.name.startswith(".upload-") or orphan) and now - path.stat().st_mtime >= self.cfg["temporary_retention_seconds"]:
                     shutil.rmtree(path) if path.is_dir() else path.unlink()
 
-    async def upload(self, request, owner, resolve_targets):
+    async def upload(self, request, producer_id, resolve_targets):
+        owner = self.owner(producer_id)
         self.rate_limit(owner)
         if self.upload_lock.locked():
             fail(429, "Another upload is active; retry later")
@@ -328,7 +330,7 @@ class MediaStore:
                             os.close(root_fd)
                         os.replace(temp, directory / "content")
                         now = time.time()
-                        meta = {"media_id": media_id, "owner": owner, "targets": parser.targets,
+                        meta = {"media_id": media_id, "owner": owner, "producer_id": producer_id, "targets": parser.targets,
                                 "mime_type": mime, "size_bytes": parser.size, "sha256": parser.digest.hexdigest(),
                                 "created_at": now, "expires_at": now + self.cfg["retention_seconds"],
                                 "state": "active", "completed_at": None, "deliveries": []}

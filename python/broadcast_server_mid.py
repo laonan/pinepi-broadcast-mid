@@ -10,6 +10,7 @@ import re
 from urllib.parse import urlsplit
 from fastapi.responses import StreamingResponse, JSONResponse
 from media_store import MediaStore, fail
+from identities import Identities, unique_object
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, UploadFile, File, Form, Request
 from collections import deque
 from PIL import Image
@@ -36,7 +37,7 @@ async def lifespan(app):
     global MEDIA
     MEDIA = MediaStore(_config.get("media", {})) if _config.get("media") else None
     if MEDIA and any(MEDIA.key == token.encode() or _config["media"]["signing_key_base64"] == token
-                     for token in [*PRODUCER_TOKENS, *DEVICE_TOKENS.values()]):
+                     for token in IDENTITIES.tokens):
         MEDIA.close()
         raise RuntimeError("Media signing key must be independent from Producer/Device credentials")
     async def maintenance():
@@ -75,7 +76,7 @@ def _load_config() -> dict:
     path = os.path.abspath(_CONFIG_PATH)
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return json.load(f, object_pairs_hook=unique_object)
     except FileNotFoundError:
         raise RuntimeError(f"config.json not found at {path}")
     except json.JSONDecodeError as e:
@@ -83,30 +84,10 @@ def _load_config() -> dict:
 
 _config = _load_config()
 
-# producers: {token: {"targets": "*" | ["device", ...]}}
-PRODUCER_TOKENS: dict[str, dict] = _config.get("producers", {})
-# devices: {device_name: {"token": "..."}}
-DEVICE_TOKENS: dict[str, str] = {
-    name: cfg["token"]
-    for name, cfg in _config.get("devices", {}).items()
-}
-
-producer_ids = [str(cfg.get("id", token)) for token, cfg in PRODUCER_TOKENS.items()]
-if len(set(producer_ids)) != len(producer_ids):
-    raise RuntimeError("Each Producer must have a unique ownership identity")
-
-if len(set(DEVICE_TOKENS.values())) != len(DEVICE_TOKENS):
-    raise RuntimeError("Each device must have a unique Device Token")
-if set(PRODUCER_TOKENS) & set(DEVICE_TOKENS.values()):
-    raise RuntimeError("Producer and Device Tokens must be distinct; update overlapping credentials")
-
-if not PRODUCER_TOKENS:
-    raise RuntimeError("config.json: no producers defined")
-if not DEVICE_TOKENS:
-    raise RuntimeError("config.json: no devices defined")
-
-logger.info("Loaded %d producer token(s), %d device(s): %s",
-            len(PRODUCER_TOKENS), len(DEVICE_TOKENS), list(DEVICE_TOKENS.keys()))
+# Public identity names and credential lookup are kept separate. No token-keyed
+# producer configuration or per-entry legacy `id` fallback is accepted.
+IDENTITIES = Identities(_config)
+logger.info("Loaded Producers %s; devices %s", list(IDENTITIES.producers), list(IDENTITIES.devices))
 
 # ---------------- Client tracking ----------------
 
@@ -123,7 +104,7 @@ class RateLimitEntry:
     count: int
     window_start: float
 
-# Rate limiting per producer token
+# Rate limiting per stable Producer ID
 PRODUCER_RATE_LIMITS: Dict[str, RateLimitEntry] = {}
 
 class ClientState:
@@ -173,6 +154,13 @@ async def flush_offline_buffer(client: ClientState):
         logger.info("Client %s (%s): offline buffer flushed", client.id, client.device_name)
 
 
+def producer_identity(token: str):
+    producer = IDENTITIES.producer_for_token(token)
+    if producer is None:
+        fail(401, "Invalid Producer Token")
+    return producer
+
+
 def _resolve_targets(producer_token: str, requested: list[str]) -> list[str]:
     """Return the list of device names to deliver to, enforcing producer ACL.
 
@@ -181,12 +169,10 @@ def _resolve_targets(producer_token: str, requested: list[str]) -> list[str]:
     """
     if not isinstance(requested, list) or not requested or any(not isinstance(d, str) or not d for d in requested):
         fail(422, "targets must be a nonempty list of device names")
-    cfg = PRODUCER_TOKENS.get(producer_token)
-    if cfg is None:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    allowed = cfg.get("targets", [])
-    all_devices = list(DEVICE_TOKENS.keys())
-    if allowed == "*" or allowed == ["*"]:
+    producer = producer_identity(producer_token)
+    allowed = producer.targets
+    all_devices = list(IDENTITIES.devices)
+    if allowed == "*":
         allowed_set = set(all_devices)
     else:
         allowed_set = set(allowed)
@@ -198,7 +184,7 @@ def _resolve_targets(producer_token: str, requested: list[str]) -> list[str]:
     for d in requested:
         if d not in allowed_set:
             raise HTTPException(status_code=403, detail=f"Producer not allowed to target device '{d}'")
-    if any(d not in DEVICE_TOKENS for d in requested):
+    if any(d not in IDENTITIES.devices for d in requested):
         fail(422, "Unknown target device")
     return list(dict.fromkeys(requested))
 
@@ -269,8 +255,8 @@ async def websocket_endpoint(ws: WebSocket):
         await ws.close(code=4001, reason="invalid auth message")
         return
 
-    expected_token = DEVICE_TOKENS.get(device_name)
-    if not expected_token or token != expected_token:
+    device = IDENTITIES.devices.get(device_name) if isinstance(device_name, str) else None
+    if not device or not isinstance(token, str) or not hmac.compare_digest(token.encode(), device.token.encode()):
         await ws.close(code=4001, reason="invalid token or unknown device")
         return
 
@@ -342,11 +328,12 @@ async def websocket_endpoint(ws: WebSocket):
 # ---------------- HTTP broadcast endpoint ----------------
 
 def _check_rate_limit(producer_token: str) -> None:
-    """Check and update rate limits for a producer token."""
+    """Rotating a credential must not create a new Producer quota identity."""
+    producer_id = producer_identity(producer_token).id
     now = time.monotonic()
-    entry = PRODUCER_RATE_LIMITS.get(producer_token)
+    entry = PRODUCER_RATE_LIMITS.get(producer_id)
     if entry is None or now - entry.window_start > RATE_LIMIT_WINDOW:
-        PRODUCER_RATE_LIMITS[producer_token] = RateLimitEntry(count=1, window_start=now)
+        PRODUCER_RATE_LIMITS[producer_id] = RateLimitEntry(count=1, window_start=now)
         return
     if entry.count >= RATE_LIMIT_MAX_REQUESTS:
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
@@ -376,7 +363,8 @@ async def send_message(request: Request, body: dict, authorization: str = Header
         store = media_store()
         # Persist before sending: WebSocket success never marks cached.
         event = body.get("event", {k: v for k, v in body.items() if k not in ("media_id", "media_ids", "targets")})
-        deliveries = store.publish(ids, store.owner(producer_token, PRODUCER_TOKENS[producer_token]), targets, event)
+        deliveries = store.publish(ids, producer_identity(producer_token).id, targets, event)
+        logger.info("Media published producer=%s media=%s targets=%s", producer_identity(producer_token).id, ids, targets)
         delivered = 0
         for meta, delivery in deliveries:
             for device in targets:
@@ -407,7 +395,7 @@ async def send_message(request: Request, body: dict, authorization: str = Header
     if msg_bytes > MAX_PAYLOAD_SIZE:
         raise HTTPException(status_code=413, detail="Message too large")
     
-    logger.info("Send to %s: payload_size=%d bytes", targets, msg_bytes)
+    logger.info("Send producer=%s targets=%s payload_size=%d bytes", producer_identity(producer_token).id, targets, msg_bytes)
 
     delivered = 0
     buffered = 0
@@ -513,7 +501,7 @@ async def send_epaper_image(
     if len(payload) != EPAPER_BYTES:
         raise HTTPException(status_code=500, detail="Conversion produced unexpected byte count")
 
-    logger.info("E-paper image send: targets=%s size=%d bytes", resolved, len(payload))
+    logger.info("E-paper producer=%s targets=%s size=%d bytes", producer_identity(producer_token).id, resolved, len(payload))
 
     delivered = 0
     for device_name in resolved:
@@ -551,10 +539,10 @@ def bearer(value):
 
 def device_identity(authorization):
     token = bearer(authorization)
-    for device, expected in DEVICE_TOKENS.items():
-        if hmac.compare_digest(token, expected):
-            return device
-    fail(401, "Invalid Device Token")
+    device = IDENTITIES.device_for_token(token)
+    if device is None:
+        fail(401, "Invalid Device Token")
+    return device.id
 
 
 def validate_external_url(url):
@@ -584,7 +572,9 @@ async def upload_media(request: Request):
     token = bearer(request.headers.get("authorization"))
     _resolve_targets(token, ["*"])
     store = media_store()
-    return await store.upload(request, store.owner(token, PRODUCER_TOKENS[token]), lambda targets: _resolve_targets(token, targets))
+    result = await store.upload(request, producer_identity(token).id, lambda targets: _resolve_targets(token, targets))
+    logger.info("Media uploaded producer=%s media=%s size=%d", producer_identity(token).id, result["media_id"], result["size_bytes"])
+    return result
 
 
 @app.post("/api/media/{media_id}/ticket")

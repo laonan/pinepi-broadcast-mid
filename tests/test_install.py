@@ -40,8 +40,8 @@ def deployment(tmp_path):
     for path in paths.values():
         Path(path).mkdir(parents=True)
     config = {
-        'producers': {'producer-secret': {'targets': '*'}},
-        'devices': {'hub': {'token': 'device-secret'}},
+        'producers': {'web-console': {'description': 'Web console', 'token': 'producer-secret', 'targets': '*'}},
+        'devices': {'hub': {'description': 'Home Hub', 'token': 'device-secret'}},
         'media': {'data_dir': paths['/var/lib/pinepi-broadcast-mid'] + '/media',
                   'public_base_url': 'https://mid.example.org',
                   'signing_key_base64': base64.b64encode(secrets.token_bytes(32)).decode()},
@@ -307,3 +307,16 @@ def test_first_valid_install_uses_source_config_and_handles_no_previous_unit(dep
         assert d['unit'].exists()
         assert d['active'].exists()
         assert d['web'].joinpath('message-protocol.js').exists()
+
+
+def test_legacy_producer_configuration_is_rejected_without_exposing_secret_keys(deployment):
+    d = deployment
+    cfg = json.loads(d['config'].read_text())
+    cfg['producers'] = {'legacy-secret': {'targets': '*'}}
+    d['config'].write_text(json.dumps(cfg))
+    result = d['run']()
+    assert result.returncode != 0
+    assert 'legacy token-keyed configuration is unsupported' in result.stderr
+    assert 'legacy-secret' not in result.stdout + result.stderr
+    assert d['active'].exists()
+    assert 'systemctl stop' not in d['log'].read_text()

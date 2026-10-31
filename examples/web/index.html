@@ -426,7 +426,7 @@ textarea { resize: vertical; min-height: 80px; }
       <div class="form-group">
         <label for="token">Producer Bearer Token</label>
         <input type="password" id="token" placeholder="your-producer-token" autocomplete="off">
-        <p class="hint">Settings and recent messages are stored in this browser.</p>
+        <p class="hint">Use producers.&lt;id&gt;.token, not the Producer ID. Settings and recent messages are stored in this browser.</p>
       </div>
     </div>
   </div>
@@ -448,6 +448,7 @@ textarea { resize: vertical; min-height: 80px; }
     <div class="form-group">
       <label for="devices">Target Hubs / devices (comma-separated, * for all permitted)</label>
       <input type="text" id="devices" placeholder="* or speaker,screen">
+      <p class="hint">Use device IDs from the devices configuration keys, not their descriptions.</p>
       <div class="device-history" data-device-history="devices" hidden>
         <div class="device-history-label">Recent devices · click to fill</div>
         <div class="device-history-list" aria-label="Previously entered target devices"></div>

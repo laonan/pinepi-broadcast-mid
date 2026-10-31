@@ -1,14 +1,20 @@
 {
   "producers": {
-    "REPLACE_WITH_PRODUCER_TOKEN": {
+    "web-console": {
+      "description": "Manual messages from the web console",
+      "token": "REPLACE_WITH_PRODUCER_WEB_TOKEN",
       "targets": "*"
     },
-    "REPLACE_WITH_PRODUCER_SPEAKER_TOKEN": {
+    "speaker-automation": {
+      "description": "Automated audio and text messages for the speaker Hub",
+      "token": "REPLACE_WITH_PRODUCER_SPEAKER_TOKEN",
       "targets": [
         "speaker"
       ]
     },
-    "REPLACE_WITH_PRODUCER_EPAPER_TOKEN": {
+    "epaper-uploader": {
+      "description": "Image uploads for the e-paper display",
+      "token": "REPLACE_WITH_PRODUCER_EPAPER_TOKEN",
       "targets": [
         "epaper"
       ]
@@ -16,9 +22,11 @@
   },
   "devices": {
     "speaker": {
+      "description": "Living-room Hub for audio and text messages",
       "token": "REPLACE_WITH_DEVICE_SPEAKER_TOKEN"
     },
     "epaper": {
+      "description": "Waveshare e-paper display adapter",
       "token": "REPLACE_WITH_DEVICE_EPAPER_TOKEN"
     }
   },

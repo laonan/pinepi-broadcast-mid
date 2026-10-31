@@ -111,7 +111,7 @@ Mid does not fetch external URLs. It rejects non-HTTPS, userinfo, non-default po
     meta.json
 ```
 
-`meta.json` stores hashed/stable uploader identity, allowed targets, MIME, actual size/hash, creation/deadline, state, publication events, and **all** delivery references and per-target `pending`/`cached`/`expired` states. No plaintext tokens/tickets are persisted. Atomic JSON replacement uses fsync; content is fsynced and renamed before metadata commit. Failed/abandoned upload files and orphan directories are cleaned. Upload attempts per Producer are durably rate-limited. Metadata corruption fails startup to preserve evidence rather than silently dropping pending notifications. Back up the complete data directory and configuration together while stopped.
+`meta.json` stores the readable `producer_id` and an `owner` SHA-256 derived from that stable ID, allowed targets, MIME, actual size/hash, creation/deadline, state, publication events, and **all** delivery references and per-target `pending`/`cached`/`expired` states. No plaintext tokens/tickets are persisted. Atomic JSON replacement uses fsync; content is fsynced and renamed before metadata commit. Failed/abandoned upload files and orphan directories are cleaned. Upload attempts per Producer are durably rate-limited. Metadata corruption fails startup to preserve evidence rather than silently dropping pending notifications. Back up the complete data directory and configuration together while stopped.
 
 All updates/download opens/cleanup use a process lock; a lifetime flock enforces one process. At most one active upload is accepted (others receive 429); each has a bounded duration. Actual bytes, multipart headers/targets, file count, format, producer capacity and total disk usage are bounded. Quotas include metadata/tombstones/orphans in service usage and retained content in producer usage; allow extra filesystem headroom for atomic metadata replacement. Count limits bound retained metadata. Uploads never use user filenames. JSON is limited independently, including chunked bodies; unauthenticated API requests are rejected before body reading/parsing.
 
@@ -141,7 +141,7 @@ All keys are under `media`. `signing_key_base64` has **no default**: generate an
 | `max_assets` | 10000 (includes tombstones) |
 | `max_deliveries_per_asset` | 200 |
 
-All numeric settings must be positive integers. Multipart request overhead allowance is 16 KiB, with targets and multipart headers each limited to 4 KiB. JSON requests remain 64 KiB; e-paper uploads allow 1 MiB plus overhead. Producer ownership can use a configured stable `id`; token rotation without it changes asset ownership. Removing a device denies its old credential after restart; pending references still expire at the original deadline.
+All numeric settings must be positive integers. Multipart request overhead allowance is 16 KiB, with targets and multipart headers each limited to 4 KiB. JSON requests remain 64 KiB; e-paper uploads allow 1 MiB plus overhead. Producer ownership and durable upload quotas use the stable `producers` mapping key, never its token or description. Keep that key unchanged when rotating the token. See the [identity schema](../README.md#identities); the old token-keyed configuration is rejected. Removing a device denies its old credential after restart; pending references still expire at the original deadline.
 
 ## systemd and Nginx
 
