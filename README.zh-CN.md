@@ -2,7 +2,7 @@
 
 [English](README.md) · [媒体协议](docs/media.zh-CN.md) · [Media protocol](docs/media.md)
 
-基于 FastAPI 的消息与私有媒体中转服务。Producer 按设备权限发布消息，也可上传 JPEG、PNG、H.264/AAC MP4。Mid 负责临时交付，Hub 独立保存终端历史消息引用的缓存。现有文本广播和独立墨水屏转换接口继续提供。
+基于 FastAPI 的消息与私有媒体中转服务。Producer 按设备权限发布消息，也可上传 JPEG、PNG、MP3 音频和 H.264/AAC MP4。Mid 负责临时交付，Hub 独立保存终端历史消息引用的缓存。现有文本广播和独立墨水屏转换接口继续提供。
 
 ## 安装
 
@@ -110,7 +110,12 @@ curl https://mid.example.com/api/send -H "Authorization: Bearer $PRODUCER_TOKEN"
 
 `targets:["*"]` 选择 Producer 有权限的已配置设备。没有 `event` 的旧请求仍包装为 `{"event": body}`。普通文本离线缓冲保存在内存，每设备最多 200 条、2 MiB；私有媒体投递会持久化。
 
-[网页示例](examples/web/index.html)现已提供完整 PinePi Home v2 的 TEXT/PRIVATE、TEXT/TTS、IMAGE、AUDIO、VIDEO 示例。可选择 NORMAL、CRITICAL（需 Hub/终端 0.8.4+），或为较旧 v2 实现省略严重程度。表单按类型显示对应字段，校验内容，并支持 JSON 预览与复制。TTS 需要预先生成的正文 MP3 地址，网页不调用语音合成服务；音视频主体仍由用户手动播放。示例媒体 URL 需要替换为实际可访问、长期有效的 Hub 地址与文件，本示例不上传媒体，也不附带示例媒体文件。重试保持 ID，编辑消息生成新 ID；点击历史可恢复原完整消息重试，旧文本历史恢复为 PRIVATE。两个目标设备输入框下方都会显示可点击填入的历史设备名，当前浏览器最多保留 20 个不重复设备名。独立墨水屏裁剪发送功能保留。
+[网页示例](examples/web/index.html)提供四种消息类型：TEXT、IMAGE、AUDIO、VIDEO。**严重程度独立于类型**，NORMAL / CRITICAL 适用于任意一种消息（需 Hub/终端 0.8.4+），不是第五种类型，切换示例时也会保留严重程度。文本可选 PRIVATE / TTS；TTS 完全由 Hub 合成，网页只提交正文、不带 `speech`，不上传文本音频，也不提供朗读 URL 输入框，Mid 仅转发请求。
+
+图片、音频和视频选择本地 JPEG/PNG（最多 8 MiB）、MP3（16 MiB）或 H.264/AAC MP4（100 MiB）。可先点击 Upload file 创建资产，或直接 Upload & send 自动先上传再发布。表单按 targets 在前、file 在后的顺序上传，使用服务端校验返回的 MIME、大小、哈希和资产 ID，通过 `media_id` 发布，不再预填不存在的媒体 URL。上传提供进行中提示和取消按钮。更换文件、类型、目标或连接后需重新上传，修改严重程度或标题可复用资产；发布失败时，只要资产仍可用，就可重用已完成上传。历史仅保存资产元数据，不保存文件字节、票据或 Device Token，媒体不可用时需要重新上传。
+
+配套 Hub 需要包含 Mid 私有媒体缓存功能，并使用原有 `--media-directory`、`--media-base-url` 参数。Hub 使用自己的 Device Token 下载，校验大小/哈希，原子缓存，持久保存改写为局域网 URL 的消息后，才发送 `media.cached`；Mid 清理不删除 Hub 副本。上传媒体缓存默认 512 MiB，可用 `--media-cache-bytes` 调整；容量不足会拒绝新下载，不自动删除历史可能引用的文件。音视频主体仍由用户手动播放，独立墨水屏裁剪功能保留。重试保持 ID 并会去重，编辑消息或点击 New ID 可创建新消息；两个目标输入框继续提供历史设备快捷按钮。
+
 
 建议通过 Nginx 将静态页面托管在 Mid 同源，或由代理配置明确可信来源的 CORS；独立域名页面发送 Bearer 请求需要跨域许可。连接设置及近期消息仍保存在浏览器 localStorage。前端协议测试：`node --test tests/test_web_protocol.cjs`（Node 18+）。
 
@@ -127,7 +132,7 @@ curl https://mid.example.com/api/send-image-2-13inch-touch-e-paper-hat-with-case
 
 ## 媒体、部署与验证
 
-[完整媒体协议](docs/media.zh-CN.md)包含上传、发布、票据刷新、鉴权下载、Range、完成确认、全部配置默认值和 Nginx 配置。无需 SQLite、Redis 或其他数据库；不抓取外部 URL，不解析网页，不做通用转码。Hub 缓存与终端 URL 改写由 Hub 项目另行实现。
+[完整媒体协议](docs/media.zh-CN.md)包含上传、发布、票据刷新、鉴权下载、Range、完成确认、全部配置默认值和 Nginx 配置。无需 SQLite、Redis 或其他数据库；不抓取外部 URL，不解析网页，不做通用转码。私有媒体缓存与终端 URL 改写位于配套 Hub 项目，部署时需要同步升级该项目。
 
 ```sh
 sudo systemctl restart pinepi-broadcast-mid
@@ -138,3 +143,5 @@ python3 -m venv .venv
 ```
 
 测试需要 ffmpeg/ffprobe，覆盖安全校验、投递持久化、重试、Range、清理和原有接口兼容性。MIT License。
+
+运行双仓库上传、缓存确认和 Mid 清理集成检查时，设置 `PINEPI_HUB_SOURCE=/实际路径/pinepi-thinksmart-view/hub/src`，再执行 `pytest tests/test_media.py`；测试使用本地 ASGI 传输和虚拟凭证，不调用外部供应商。

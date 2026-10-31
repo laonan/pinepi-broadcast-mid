@@ -12,7 +12,7 @@ curl https://mid.example.com/api/media \
   -F 'targets=speaker,screen' -F 'file=@photo.jpg'
 ```
 
-HTTP 201 returns `media_id` (random 128-bit hexadecimal), `mime_type`, `size_bytes`, `sha256` (lowercase hex), `expires_at` (Unix seconds UTC). Content is checked with Pillow or ffprobe; MP4 must contain H.264 video and optionally AAC audio, without other streams. Unsupported containers/codecs return 415; unavailable ffprobe returns 503. No conversion is performed. Validation checks format and decoding/probe structure, not compatibility with every terminal hardware decoder.
+HTTP 201 returns `media_id` (random 128-bit hexadecimal), `mime_type`, `size_bytes`, `sha256` (lowercase hex), `expires_at` (Unix seconds UTC). JPEG/PNG is checked with Pillow; MP3 and MP4 are checked with ffprobe. Audio accepts one MP3 audio stream (optional embedded JPEG/PNG cover art), not AAC/WAV/OGG. MP4 must contain H.264 video and optionally AAC audio, without other streams. Unsupported containers/codecs return 415; unavailable ffprobe returns 503. No conversion is performed. Validation checks format and decoding/probe structure, not compatibility with every terminal hardware decoder.
 
 Publish using the same Producer identity and a subset of the upload's targets:
 
@@ -197,6 +197,8 @@ Align proxy limits whenever changing app upload limits. Keep proxy buffering off
 
 ## Separate Hub implementation
 
-Hub must implement DEVICE/NONE handling and destination checks, interrupted-download retry and ticket refresh, exact size/SHA-256 verification, atomic persistent cache writes, durable message/media reference transaction, confirmation retry, terminal URL rewriting, delivery deduplication, and cache eviction based on terminal history references/capacity. An ACK is a trusted Hub assertion, not proof supplied by a JWT. Test terminal access after Mid cleanup with the actual Hub; Mid-only tests cannot establish that integration. Webpage/YouTube resolution, grabbing and general transcoding are out of scope.
+The companion Hub private cache implements DEVICE origin checks, redirect rejection, retry/ticket refresh, exact size/SHA-256 checks, atomic cache files, persistent message references, confirmation and LAN URL rewriting. It reuses verified cached files after reconnect/restart. Managed content defaults to 512 MiB and 10000 files; it refuses new downloads when full rather than removing history references it cannot safely prove unused. Historical-reference-aware eviction remains separate work. NONE URLs are never fetched with Mid credentials. An ACK is a trusted Hub assertion, not proof supplied by a JWT. Test terminal access after Mid cleanup with the actual Hub; Mid-only tests cannot establish that integration. Webpage/YouTube resolution, grabbing and general transcoding are out of scope.
 
 Implementation references: [PyJWT verification API](https://pyjwt.readthedocs.io/en/latest/api.html) and [python-multipart streaming callbacks](https://multipart.fastapiexpert.com/api/).
+
+The demo uses local uploads for IMAGE/AUDIO/VIDEO and never asks for a TTS URL. TEXT/TTS only forwards text for Hub synthesis; media uploads never perform speech synthesis. NORMAL/CRITICAL is common to every message kind.

@@ -1,14 +1,15 @@
-/* PinePi Home v2 payload construction. Keep terminal objects free of transport fields. */
+/* Producer submissions to the Hub via Mid. Hub-generated TTS omits speech here;
+ * the Hub adds real audio before validating/delivering strict terminal v2 JSON. */
 (function (root) {
   'use strict';
   const MIME = { IMAGE: ['image/jpeg', 'image/png'], AUDIO: ['audio/mpeg'], VIDEO: ['video/mp4'] };
+  const FILE_LIMITS = { IMAGE: 8 * 1024 * 1024, AUDIO: 16 * 1024 * 1024, VIDEO: 100 * 1024 * 1024 };
+  const ACCEPT = { IMAGE: 'image/jpeg,image/png,.jpg,.jpeg,.png', AUDIO: 'audio/mpeg,.mp3', VIDEO: 'video/mp4,.mp4' };
   const PRESETS = {
-    private: { kind: 'TEXT', textMode: 'PRIVATE', severity: 'NORMAL', source: '私人助理', title: '私人提醒', text: '这是一条隐私文本示例：请记得带上家门钥匙。' },
-    tts: { kind: 'TEXT', textMode: 'TTS', severity: 'NORMAL', source: '早间新闻', title: '今日新闻', text: '早上好。这是一条正文朗读示例，请先准备与这段正文对应的 MP3 音频。', speechUrl: 'http://192.168.31.36:8766/media/news-example.mp3' },
-    image: { kind: 'IMAGE', severity: 'NORMAL', source: '家庭相册', title: '今日照片', mediaUrl: 'http://192.168.31.36:8766/media/photo-example.jpg', mimeType: 'image/jpeg' },
-    audio: { kind: 'AUDIO', severity: 'NORMAL', source: '家庭消息', title: '一段语音留言', mediaUrl: 'http://192.168.31.36:8766/media/audio-example.mp3', mimeType: 'audio/mpeg' },
-    video: { kind: 'VIDEO', severity: 'NORMAL', source: '家庭消息', title: '一段视频', mediaUrl: 'http://192.168.31.36:8766/media/video-example.mp4', mimeType: 'video/mp4' },
-    critical: { kind: 'TEXT', textMode: 'PRIVATE', severity: 'CRITICAL', source: '家庭安全（示例）', title: '安全确认（虚构示例）', text: '这是一条虚构的严重消息示例，请联系家人确认安全。' }
+    text: { kind: 'TEXT', source: '家庭消息', title: '一条消息', text: '你好，这是一条发送给家人的消息。', textMode: 'PRIVATE' },
+    image: { kind: 'IMAGE', source: '家庭相册', title: '今日照片' },
+    audio: { kind: 'AUDIO', source: '家庭消息', title: '一段语音留言' },
+    video: { kind: 'VIDEO', source: '家庭消息', title: '一段视频' }
   };
 
   function requireValue(ok, message) { if (!ok) throw new Error(message); }
@@ -46,10 +47,11 @@
       requireValue(text.length > 0 && text.length <= 8192 && new TextEncoder().encode(text).length <= 32768, 'Text is required (maximum 8192 UTF-16 units / 32 KiB UTF-8).');
       message.text = text;
       message.text_mode = draft.textMode;
-      if (draft.textMode === 'TTS') message.speech = { url: validateUrl((draft.speechUrl || '').trim()), mime_type: 'audio/mpeg' };
+      // TTS is entirely a Hub responsibility. Stale URL/upload fields in a
+      // draft must never turn a text submission into a media or speech request.
     } else {
-      requireValue(MIME[draft.kind].includes(draft.mimeType), 'MIME type does not match the selected message type.');
-      message.media = { url: validateUrl((draft.mediaUrl || '').trim()), mime_type: draft.mimeType };
+      const asset = validateAsset(draft.uploadedMedia, draft.kind);
+      message.media = { url: `mid://${asset.media_id}`, mime_type: asset.mime_type };
     }
     return message;
   }
@@ -57,11 +59,41 @@
   function buildRequest(draft, identity, targets) {
     requireValue(Array.isArray(targets) && targets.length > 0 && targets.every(t => typeof t === 'string' && t.trim()), 'Enter at least one target device.');
     const request = { targets: [...new Set(targets)], event: buildMessage(draft, identity) };
+    if (draft.kind !== 'TEXT') request.media_id = draft.uploadedMedia.media_id;
     requireValue(new TextEncoder().encode(JSON.stringify(request)).length <= 65536, 'Request exceeds the Mid 64 KiB JSON limit.');
     return request;
   }
 
-  const api = { MIME, PRESETS, validateUrl, buildMessage, buildRequest };
+  function validateFile(file, kind) {
+    requireValue(FILE_LIMITS[kind], 'Choose an image, audio or video message.');
+    requireValue(file && Number.isInteger(file.size) && file.size > 0, 'Choose a nonempty local file first.');
+    requireValue(file.size <= FILE_LIMITS[kind], `${kind} files must be at most ${FILE_LIMITS[kind] / 1024 / 1024} MiB.`);
+    return file;
+  }
+
+  function validateAsset(asset, kind) {
+    requireValue(asset && /^[0-9a-f]{32}$/.test(asset.media_id || ''), 'Choose a local file and upload it before publishing.');
+    requireValue(MIME[kind]?.includes(asset.mime_type), 'The uploaded file type does not match the selected message type.');
+    requireValue(Number.isInteger(asset.size_bytes) && asset.size_bytes > 0 && asset.size_bytes <= FILE_LIMITS[kind], 'Uploaded file exceeds the terminal size limit.');
+    requireValue(/^[0-9a-f]{64}$/.test(asset.sha256 || '') && Number.isFinite(asset.expires_at), 'Invalid upload metadata returned by Mid.');
+    requireValue(asset.expires_at > Date.now() / 1000, 'This upload has expired. Upload the file again.');
+    return asset;
+  }
+
+  function uploadEndpoint(apiUrl) {
+    const url = new URL(apiUrl);
+    requireValue(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash && /^\/api\/send\/?$/.test(url.pathname), 'Use the Broadcast Mid /api/send endpoint.');
+    if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) validateUrl(url.href);
+    url.pathname = '/api/media';
+    return url.href;
+  }
+
+  function needsHistoryRefresh(event, asset) {
+    if (event.kind === 'TEXT') return Object.hasOwn(event, 'speech');
+    return !asset || event.media?.url !== `mid://${asset.media_id}`;
+  }
+
+  const api = { MIME, FILE_LIMITS, ACCEPT, PRESETS, validateUrl, validateFile, validateAsset, uploadEndpoint, buildMessage, buildRequest, needsHistoryRefresh };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PinePiProtocol = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

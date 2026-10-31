@@ -12,7 +12,7 @@ curl https://mid.example.com/api/media \
   -F 'targets=speaker,screen' -F 'file=@photo.jpg'
 ```
 
-成功返回 HTTP 201，包含 `media_id`（随机 128 位十六进制 ID）、`mime_type`、`size_bytes`、`sha256`（小写十六进制）、`expires_at`（UTC Unix 秒）。图片通过 Pillow 校验结构并解码，视频使用 ffprobe。MP4 必须包含 H.264 视频，可包含 AAC 音频，不接受其他类型流；格式或编码不支持返回 415，缺少 ffprobe 返回 503。不做转码，也不保证所有终端硬件解码器都兼容。
+成功返回 HTTP 201，包含 `media_id`（随机 128 位十六进制 ID）、`mime_type`、`size_bytes`、`sha256`（小写十六进制）、`expires_at`（UTC Unix 秒）。JPEG/PNG 图片通过 Pillow 校验结构并解码，MP3 音频和 MP4 视频使用 ffprobe。音频只支持单个 MP3 音频流，可带内嵌 JPEG/PNG 封面，不接受 AAC/WAV/OGG。MP4 必须包含 H.264 视频，可包含 AAC 音频，不接受其他类型流；格式或编码不支持返回 415，缺少 ffprobe 返回 503。不做转码，也不保证所有终端硬件解码器都兼容。
 
 同一个 Producer 通过 `/api/send` 引用资产，目标只能是上传时允许目标的子集，发布时重新校验权限和归属：
 
@@ -199,6 +199,8 @@ location /ws/ {
 
 ## Hub 项目配套工作
 
-Hub 需实现 DEVICE/NONE 及目标地址校验、断点重试和刷新票据、完整大小/哈希验证、原子持久缓存、消息和媒体引用的持久事务、确认重试、终端 URL 改写、投递去重，以及按终端历史引用和容量清理本地缓存。完成确认是合法 Hub 的承诺，不是 JWT 提供的落盘证明。应使用真实 Hub 验证 Mid 清理后终端仍可打开历史媒体，Mid 单仓库测试不能证明这一端到端条件。网页/YouTube 解析、抓取和通用转码不在本期范围。
+配套 Hub 私有缓存已实现 DEVICE 受信任源校验、禁止重定向、下载重试与刷新票据、完整大小/哈希校验、原子缓存、消息引用持久化、完成确认和局域网 URL 改写，重连或重启后复用已校验缓存。托管内容默认最多 512 MiB、10000 个文件，容量不足时拒绝新下载，不删除无法证明已无历史引用的文件；按历史引用自动回收仍为独立工作。NONE URL 不会附带 Mid 凭证下载。完成确认是合法 Hub 的承诺，不是 JWT 提供的落盘证明。应使用真实 Hub 验证 Mid 清理后终端仍可打开历史媒体，Mid 单仓库测试不能证明这一端到端条件。网页/YouTube 解析、抓取和通用转码不在本期范围。
 
 实现参考：[PyJWT 验证 API](https://pyjwt.readthedocs.io/en/latest/api.html) 与 [python-multipart 流式回调](https://multipart.fastapiexpert.com/api/)。
+
+网页示例为 IMAGE/AUDIO/VIDEO 提供本地文件上传，不为 TTS 提供音频 URL 输入框；TEXT/TTS 只转发正文，由 Hub 合成，媒体上传不会触发合成。NORMAL/CRITICAL 是所有消息类型共有的独立严重程度。

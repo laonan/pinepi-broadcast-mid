@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) · [Media protocol](docs/media.md) · [媒体协议](docs/media.zh-CN.md)
 
-FastAPI relay for authenticated Producers and named Hubs/devices. Text broadcasts and the independent e-paper conversion endpoint remain available. Producers can also upload private JPEG/PNG images and H.264/AAC MP4 videos for delivery to Hubs. Mid temporarily stores media; Hubs retain their own caches for terminal history.
+FastAPI relay for authenticated Producers and named Hubs/devices. Text broadcasts and the independent e-paper conversion endpoint remain available. Producers can also upload private JPEG/PNG images, MP3 audio and H.264/AAC MP4 videos for delivery to Hubs. Mid temporarily stores media; Hubs retain their own caches for terminal history.
 
 ## Install
 
@@ -110,7 +110,12 @@ curl https://mid.example.com/api/send -H "Authorization: Bearer $PRODUCER_TOKEN"
 
 `targets:["*"]` selects the Producer's permitted configured devices. Legacy requests without `event` are wrapped as `{"event": body}`. Ordinary text messages have an in-memory offline buffer (200 messages / 2 MiB per device); media deliveries have durable pending state.
 
-The [web demo](examples/web/index.html) includes complete PinePi Home v2 examples for TEXT/PRIVATE, TEXT/TTS, IMAGE, AUDIO and VIDEO. Choose NORMAL or CRITICAL (Hub/terminal 0.8.4+), or omit severity for older v2 implementations. The form shows only fields belonging to the selected type, validates the payload, and offers a JSON preview/copy. TTS requires a pre-generated narration MP3 URL; this demo does not call a speech service. Audio/video playback remains manual. Replace example Hub addresses and filenames with reachable, persistent media URLs; examples do not upload media or include sample media files. Retries preserve IDs, and editing the message generates a new ID. Recent messages restore the original complete event for retry; old text history restores as PRIVATE. Previously entered target device names appear as clickable shortcuts below both target fields, with up to 20 unique names retained in this browser. The e-paper crop/send tool remains separate.
+The [web demo](examples/web/index.html) has four message types: TEXT, IMAGE, AUDIO and VIDEO. **Severity is independent**: NORMAL / CRITICAL applies to every type (Hub/terminal 0.8.4+); it is not a fifth message type. Switching examples preserves the selected severity. Text has PRIVATE / TTS modes. TTS is synthesized exclusively on the Hub: this form sends text without `speech`, performs no media upload for text and offers no narration URL input. Mid only relays the request.
+
+For IMAGE/AUDIO/VIDEO choose a local JPEG/PNG (up to 8 MiB), MP3 (16 MiB) or H.264/AAC MP4 (100 MiB). Choose Upload file to create an asset first, or Upload & send to upload then publish in one flow. The form sends targets before file bytes, takes MIME/hash/size/asset ID from the validated server response, and publishes using `media_id`; there are no fake media URLs. Uploads have an indeterminate progress indicator and cancellation. Changing the file, type, targets or connection requires a fresh upload; severity/title changes reuse the asset. A failed publication can reuse the completed upload while it remains available. Browser history stores asset metadata, never file bytes, tickets or Device Tokens; unavailable media must be uploaded again.
+
+The companion Hub must include its private Mid media cache and use its existing `--media-directory` / `--media-base-url` options. It downloads with its own Device Token, checks size/hash, atomically caches, persists the message with a LAN URL, and only then sends `media.cached`. Mid cleanup does not delete that Hub copy. The managed upload cache defaults to 512 MiB (`--media-cache-bytes`); it refuses new downloads when full and does not evict history-referenced files. Audio/video playback remains manual. The e-paper crop/send tool remains separate. Retries preserve IDs and are deduplicated; editing a message or choosing New ID creates a new message. Previously entered device IDs remain clickable below both target fields.
+
 
 Host the static demo on the same origin as Mid (for example via Nginx), or configure explicit trusted-origin CORS in your proxy. A separately hosted page requires CORS for Bearer-authenticated requests. Browser settings and recent messages remain in localStorage. Frontend protocol checks: `node --test tests/test_web_protocol.cjs` (Node 18+).
 
@@ -127,7 +132,7 @@ It sends a raw 4000-byte binary WebSocket frame (250×122 monochrome), only to c
 
 ## Media and deployment
 
-See [the full protocol and configuration defaults](docs/media.md) for upload, publish, ticket refresh, Range download, completion confirmation, Nginx setup and failure recovery. No SQLite, Redis, external URL fetching, webpage extraction or transcoding is used. Hub caching and terminal URL rewriting are implemented in the separate Hub project.
+See [the full protocol and configuration defaults](docs/media.md) for upload, publish, ticket refresh, Range download, completion confirmation, Nginx setup and failure recovery. No SQLite, Redis, external URL fetching, webpage extraction or transcoding is used. The private media cache and terminal URL rewriting live in the companion Hub project; deploy its matching version as well as Mid.
 
 ```sh
 sudo systemctl restart pinepi-broadcast-mid
@@ -138,3 +143,5 @@ python3 -m venv .venv
 ```
 
 Tests require `ffmpeg` and `ffprobe` and cover security, delivery persistence, retries, Range requests, cleanup and compatibility. MIT License.
+
+To run the two-repository upload/cache/cleanup integration checks, set `PINEPI_HUB_SOURCE=/path/to/pinepi-thinksmart-view/hub/src` when running `pytest tests/test_media.py`. The checks use local ASGI transports and fake credentials, with no external provider calls.

@@ -393,6 +393,11 @@ textarea { resize: vertical; min-height: 80px; }
 .protocol-preview summary { cursor: pointer; color: var(--text-secondary); font-size: 0.85rem; }
 .protocol-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--input-bg); border: 1px solid var(--border); padding: 12px; margin: 10px 0; border-radius: 8px; font-size: 0.75rem; max-height: 360px; overflow-y: auto; }
 #severityHint { min-height: 3em; }
+#mediaFile { width: 100%; color: var(--text); font: inherit; }
+#mediaFile::file-selector-button { padding: 9px 12px; margin-right: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--input-bg); color: var(--text); cursor: pointer; }
+.upload-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#mediaUploadProgress { width: 100%; margin-top: 10px; }
+#mediaUploadInfo { overflow-wrap: anywhere; }
 @media (max-width: 360px) { .form-grid { grid-template-columns: 1fr; gap: 0; } }
 </style>
 </head>
@@ -434,16 +439,14 @@ textarea { resize: vertical; min-height: 80px; }
   <!-- PinePi Home v2 Message Form -->
   <div class="card" id="messageCard">
     <div class="card-title">PinePi Home · v2 message examples</div>
-    <p class="hint">Choose an example, replace the sample content and media address, then send.
+    <p class="hint">Choose a message type and severity. Upload a local file for image, audio or video messages.
       <a href="https://github.com/laonan/pinepi-thinksmart-view/blob/main/docs/MESSAGE_PROTOCOL.zh-CN.md" target="_blank" rel="noopener noreferrer">Protocol / 协议</a>
     </p>
     <div class="preset-list" aria-label="Message examples">
-      <button type="button" class="preset-btn" data-preset="private">Text · PRIVATE</button>
-      <button type="button" class="preset-btn" data-preset="tts">Text · TTS</button>
+      <button type="button" class="preset-btn" data-preset="text">Text 文本</button>
       <button type="button" class="preset-btn" data-preset="image">Image 图片</button>
       <button type="button" class="preset-btn" data-preset="audio">Audio 音频</button>
       <button type="button" class="preset-btn" data-preset="video">Video 视频</button>
-      <button type="button" class="preset-btn" data-preset="critical">CRITICAL example</button>
     </div>
     <div class="form-group">
       <label for="devices">Target Hubs / devices (comma-separated, * for all permitted)</label>
@@ -465,7 +468,7 @@ textarea { resize: vertical; min-height: 80px; }
         </select>
       </div>
       <div class="form-group">
-        <label for="severity">Severity 严重程度</label>
+        <label for="severity">Severity · all message types</label>
         <select id="severity" aria-describedby="severityHint">
           <option value="NORMAL">NORMAL · 普通</option>
           <option value="CRITICAL">CRITICAL · 严重</option>
@@ -499,23 +502,20 @@ textarea { resize: vertical; min-height: 80px; }
           <span>Same as title</span>
         </label>
       </div>
-      <div class="form-group" id="speechFields" hidden>
-        <label for="speechUrl">Text narration URL · MP3 (required for TTS)</label>
-        <input type="url" id="speechUrl" placeholder="http://192.168.31.36:8766/media/narration.mp3" maxlength="4096">
-        <p class="hint">Provide an MP3 of exactly the text above (audio/mpeg). This Mid demo does not synthesize speech. Title and source are not read aloud.</p>
-      </div>
+      <p class="hint" id="speechHint" hidden>TTS is generated and cached by the Hub from the text. Mid only relays the request. No speech URL or media upload is needed for text messages.</p>
     </div>
     <div id="mediaFields" hidden>
       <div class="form-group">
-        <label for="mediaUrl">Media URL (required)</label>
-        <input type="url" id="mediaUrl" placeholder="http://192.168.31.36:8766/media/example.jpg" maxlength="4096">
-        <p class="hint">Use a direct URL reachable from the terminal. Sample files are placeholders; replace the Hub IP and filename. HTTPS or HTTP on a private IPv4 address is supported.</p>
+        <label for="mediaFile">Local media file 本地媒体文件</label>
+        <input type="file" id="mediaFile" aria-describedby="mediaHint">
+        <p class="hint" id="mediaHint"></p>
       </div>
-      <div class="form-group">
-        <label for="mimeType">Media MIME type</label>
-        <select id="mimeType"></select>
+      <div class="upload-actions">
+        <button type="button" class="secondary-btn" id="mediaUploadBtn">Upload file</button>
+        <button type="button" class="secondary-btn" id="mediaCancelBtn" hidden>Cancel upload</button>
       </div>
-      <p class="hint" id="mediaHint"></p>
+      <progress id="mediaUploadProgress" max="1" hidden aria-label="Media upload progress"></progress>
+      <p class="hint" id="mediaUploadInfo" role="status" aria-live="polite">Choose a local file. Send will upload it first, then publish the message.</p>
     </div>
     <div class="form-group" style="margin-top:16px">
       <label for="messageId">Message ID</label>
@@ -523,7 +523,7 @@ textarea { resize: vertical; min-height: 80px; }
         <input type="text" id="messageId" readonly>
         <button type="button" class="secondary-btn" id="newMessageId">New ID</button>
       </div>
-      <p class="hint">Retries keep the same ID. Editing the message or choosing New ID creates a new message. A saved-message ACK does not mean media was downloaded or played.</p>
+      <p class="hint">Retries keep the same ID and are deduplicated. Editing the message or choosing New ID creates a new message, even with the same text. A saved-message ACK does not mean media was downloaded or played.</p>
     </div>
     <details class="protocol-preview">
       <summary>Request JSON preview</summary>
@@ -724,9 +724,18 @@ const kindInput = document.getElementById('messageKind');
 const severityInput = document.getElementById('severity');
 const sourceInput = document.getElementById('source');
 const textModeInput = document.getElementById('textMode');
-const mediaUrlInput = document.getElementById('mediaUrl');
-const mimeTypeInput = document.getElementById('mimeType');
-const speechUrlInput = document.getElementById('speechUrl');
+const mediaFileInput = document.getElementById('mediaFile');
+const mediaUploadBtn = document.getElementById('mediaUploadBtn');
+const mediaCancelBtn = document.getElementById('mediaCancelBtn');
+const mediaUploadInfo = document.getElementById('mediaUploadInfo');
+const mediaUploadProgress = document.getElementById('mediaUploadProgress');
+let uploadedMedia = null;
+let uploadedContext = '';
+let lastMediaKind = 'TEXT';
+let uploadPromise = null;
+let uploadController = null;
+let uploadingContext = '';
+let publishInFlight = false;
 const messageIdInput = document.getElementById('messageId');
 const previewEl = document.getElementById('payloadPreview');
 const sendBtn = document.getElementById('sendBtn');
@@ -744,7 +753,7 @@ function newIdentity() {
 function readDraft() {
   return { kind: kindInput.value, severity: severityInput.value, source: sourceInput.value,
     title: titleInput.value, text: contentInput.value, textMode: textModeInput.value,
-    speechUrl: speechUrlInput.value, mediaUrl: mediaUrlInput.value, mimeType: mimeTypeInput.value };
+    uploadedMedia: uploadedContext === uploadContext() ? uploadedMedia : null };
 }
 
 function readTargets() {
@@ -756,30 +765,34 @@ function updateFields() {
   const isText = kind === 'TEXT';
   document.getElementById('textFields').hidden = !isText;
   document.getElementById('mediaFields').hidden = isText;
-  document.getElementById('speechFields').hidden = !isText || textModeInput.value !== 'TTS';
+  document.getElementById('speechHint').hidden = !isText || textModeInput.value !== 'TTS';
   document.getElementById('modeHint').textContent = textModeInput.value === 'PRIVATE'
     ? 'PRIVATE: show the text and play only the fixed local notice. Never send the title or text to a third-party speech service.'
-    : 'TTS: read the text from the supplied MP3 when sound protection allows. There is no separate text arrival notice.';
+    : 'TTS: the Hub generates narration from the text. Mid does not synthesize speech.';
   document.getElementById('severityHint').textContent = severityInput.value === 'CRITICAL'
-    ? 'CRITICAL is for credible major safety risks. It does not override privacy, Bluetooth sound protection, volume or playback rules.'
+    ? 'CRITICAL applies to text, images, audio and video. Use it for credible major safety risks; privacy and playback rules still apply.'
     : severityInput.value === 'NORMAL'
-      ? 'NORMAL is for everyday messages. Explicit severity requires Hub and terminal 0.8.4 or later.'
+      ? 'NORMAL applies to text, images, audio and video. Explicit severity requires Hub and terminal 0.8.4 or later.'
       : 'Severity will be omitted for older strict v2 implementations; the message defaults to NORMAL.';
-  const options = PinePiProtocol.MIME[kind] || [];
-  const previousMime = mimeTypeInput.value;
-  mimeTypeInput.replaceChildren(...options.map(mime => {
-    const option = document.createElement('option');
-    option.value = mime;
-    option.textContent = mime;
-    return option;
-  }));
-  if (options.includes(previousMime)) mimeTypeInput.value = previousMime;
+  if (lastMediaKind !== kind) {
+    mediaFileInput.value = '';
+    uploadedMedia = null;
+    uploadedContext = '';
+    lastMediaKind = kind;
+  }
+  if (uploadPromise && uploadingContext !== uploadContext()) uploadController?.abort();
+  if (uploadedMedia && uploadedContext !== uploadContext()) {
+    uploadedMedia = null;
+    uploadedContext = '';
+  }
+  mediaFileInput.accept = PinePiProtocol.ACCEPT[kind] || '';
   const hints = {
-    IMAGE: 'JPEG / PNG, up to 8 MiB at the terminal. Display on arrival with a fixed image notice; no image-content narration.',
-    AUDIO: 'MP3 (audio/mpeg), up to 16 MiB at the terminal. Fixed arrival notice; the main audio plays only when tapped.',
-    VIDEO: 'MP4, preferably H.264 + AAC. Fixed arrival notice; video plays only when tapped. Use a direct URL without redirects.'
+    IMAGE: 'JPEG / PNG, up to 8 MiB. The Hub caches the upload and serves it to the terminal.',
+    AUDIO: 'MP3, up to 16 MiB. A fixed arrival notice is followed by manual playback of the uploaded audio.',
+    VIDEO: 'MP4 with H.264 and optional AAC, up to 100 MiB. Video plays when tapped.'
   };
   document.getElementById('mediaHint').textContent = hints[kind] || '';
+  refreshUploadActions();
 }
 
 function renderPreview() {
@@ -797,12 +810,13 @@ function applyDraft(draft, identity) {
   titleInput.value = draft.title || '';
   contentInput.value = draft.text || '';
   textModeInput.value = draft.textMode || 'PRIVATE';
-  speechUrlInput.value = draft.speechUrl || '';
-  mediaUrlInput.value = draft.mediaUrl || '';
+  mediaFileInput.value = '';
+  uploadedMedia = draft.uploadedMedia || null;
+  uploadedContext = uploadedMedia ? uploadContext() : '';
+  lastMediaKind = kindInput.value;
   sameAsTitleCheckbox.checked = false;
   syncEnabled = false;
   updateFields();
-  if (draft.mimeType) mimeTypeInput.value = draft.mimeType;
   if (identity) {
     messageIdentity = identity;
     messageIdInput.value = identity.id;
@@ -820,11 +834,99 @@ document.getElementById('messageCard').addEventListener('input', () => {
   renderPreview();
 });
 document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click', () => {
-  applyDraft(PinePiProtocol.PRESETS[button.dataset.preset]);
+  applyDraft({ ...PinePiProtocol.PRESETS[button.dataset.preset], severity: severityInput.value });
 }));
 document.getElementById('newMessageId').addEventListener('click', () => { newIdentity(); renderPreview(); });
 // Sync may populate a second field during checkbox change; preview the final values.
 sameAsTitleCheckbox.addEventListener('change', () => { newIdentity(); renderPreview(); });
+
+// --- Local media uploads; only server-created assets appear in message URLs. ---
+function uploadContext() {
+  return JSON.stringify([kindInput.value, [...new Set(readTargets())].sort(), apiUrlInput.value.trim(), tokenInput.value.trim()]);
+}
+function currentAsset() {
+  if (!uploadedMedia || uploadedContext !== uploadContext()) return null;
+  try { return PinePiProtocol.validateAsset(uploadedMedia, kindInput.value); } catch { return null; }
+}
+function refreshUploadActions() {
+  const asset = kindInput.value === 'TEXT' ? null : currentAsset();
+  const file = mediaFileInput.files[0];
+  mediaUploadBtn.disabled = !!uploadPromise || publishInFlight || !!asset;
+  mediaUploadBtn.textContent = asset ? 'Uploaded' : 'Upload file';
+  mediaCancelBtn.hidden = !uploadPromise;
+  mediaUploadProgress.hidden = !uploadPromise;
+  sendBtn.disabled = !!uploadPromise || publishInFlight;
+  sendBtn.textContent = uploadPromise ? 'Uploading...' : publishInFlight ? 'Sending...' : kindInput.value !== 'TEXT' && !asset ? 'Upload & send' : 'Send message';
+  if (asset) mediaUploadInfo.textContent = `Uploaded · ${asset.mime_type} · ${(asset.size_bytes / 1024).toFixed(1)} KiB · ${asset.media_id}`;
+  else if (uploadPromise) mediaUploadInfo.textContent = 'Uploading and validating the file. This does not publish a message yet.';
+  else mediaUploadInfo.textContent = file ? `${file.name} · ${(file.size / 1024).toFixed(1)} KiB · ready to upload` : 'Choose a local file. Send will upload it first, then publish the message.';
+}
+function connectionSettings() {
+  const url = apiUrlInput.value.trim();
+  const token = tokenInput.value.trim();
+  if (!url) throw new Error('Fill in the Mid API URL in connection settings.');
+  const endpoint = new URL(PinePiProtocol.uploadEndpoint(url));
+  endpoint.pathname = '/api/send';
+  if (!token) throw new Error('Fill in a Producer Token in connection settings.');
+  const targets = readTargets();
+  if (!targets.length) throw new Error('Enter at least one target device.');
+  return { url: endpoint.href, token, targets };
+}
+async function uploadLocalMedia() {
+  if (currentAsset()) return currentAsset();
+  if (uploadPromise) return uploadPromise;
+  const connection = connectionSettings();
+  const kind = kindInput.value;
+  const file = PinePiProtocol.validateFile(mediaFileInput.files[0], kind);
+  const context = uploadContext();
+  const controller = new AbortController();
+  uploadController = controller;
+  uploadingContext = context;
+  const timeout = setTimeout(() => controller.abort(), 150000);
+  const form = new FormData();
+  form.append('targets', JSON.stringify(connection.targets)); // ACL must precede file bytes.
+  form.append('file', file);
+  mediaUploadProgress.removeAttribute('value');
+  uploadPromise = (async () => {
+    try {
+      const response = await fetch(PinePiProtocol.uploadEndpoint(connection.url), { method: 'POST', redirect: 'error',
+        headers: { 'Authorization': `Bearer ${connection.token}` }, body: form, signal: controller.signal });
+      if (!response.ok) throw new Error(`Upload ${response.status}: ${await response.text()}`);
+      const asset = PinePiProtocol.validateAsset(await response.json(), kind);
+      if (asset.size_bytes !== file.size) throw new Error('Uploaded size does not match the selected file.');
+      if (context !== uploadContext() || mediaFileInput.files[0] !== file) throw new Error('The type, file, targets or connection changed. Upload the file again.');
+      uploadedMedia = asset;
+      uploadedContext = context;
+      newIdentity();
+      renderPreview();
+      return asset;
+    } finally {
+      clearTimeout(timeout);
+      uploadPromise = null;
+      uploadController = null;
+      uploadingContext = '';
+      refreshUploadActions();
+    }
+  })();
+  refreshUploadActions();
+  return uploadPromise;
+}
+mediaFileInput.addEventListener('change', () => {
+  uploadController?.abort();
+  uploadedMedia = null;
+  uploadedContext = '';
+  newIdentity();
+  updateFields();
+  renderPreview();
+});
+mediaUploadBtn.addEventListener('click', async () => {
+  try {
+    await uploadLocalMedia();
+    showStatus('success', 'File uploaded. Click Send message to publish it.');
+  } catch (error) { showStatus('error', error.name === 'AbortError' ? 'Upload cancelled or timed out.' : error.message); }
+});
+mediaCancelBtn.addEventListener('click', () => uploadController?.abort());
+[apiUrlInput, tokenInput].forEach(input => input.addEventListener('input', () => { updateFields(); renderPreview(); }));
 
 // --- History (read old text records, store complete v2 events) ---
 function getHistory() {
@@ -834,16 +936,22 @@ function getHistory() {
   } catch { return []; }
 }
 function saveHistory(list) { localStorage.setItem('msgHistory', JSON.stringify(list.slice(0, 20))); }
-function eventDraft(event) {
+function eventDraft(event, asset) {
   return { kind: event.kind, severity: event.severity || '', source: event.source, title: event.title,
-    text: event.text, textMode: event.text_mode, speechUrl: event.speech?.url,
-    mediaUrl: event.media?.url, mimeType: event.media?.mime_type };
+    text: event.text, textMode: event.text_mode, uploadedMedia: asset || null };
 }
 function restoreRecord(record) {
+  if (Array.isArray(record.targets) && record.targets.every(t => typeof t === 'string')) {
+    devicesInput.value = record.targets.join(',');
+    localStorage.setItem('devices', devicesInput.value);
+  }
   if (record.event?.version === 2) {
-    applyDraft(eventDraft(record.event), { id: record.event.id, createdAt: record.event.created_at });
+    const repaired = PinePiProtocol.needsHistoryRefresh(record.event, record.uploadedMedia);
+    applyDraft(eventDraft(record.event, repaired ? null : record.uploadedMedia), repaired ? null : { id: record.event.id, createdAt: record.event.created_at });
+    if (repaired) showStatus('success', record.event.kind === 'TEXT'
+      ? 'TTS now uses the Hub only. The old speech URL was removed and a new ID assigned.'
+      : 'Choose and upload the local media file for this message. A new ID has been assigned.');
   } else {
-    // Old play_now has no v2 equivalent: restore old text as PRIVATE, without speech.
     applyDraft({ kind: 'TEXT', severity: 'NORMAL', source: 'Web demo', title: record.title, text: record.content, textMode: 'PRIVATE' });
   }
 }
@@ -877,7 +985,7 @@ function renderHistory() {
 }
 const recentMessages = getHistory();
 if (recentMessages.length) restoreRecord(recentMessages[0]);
-else applyDraft(PinePiProtocol.PRESETS.private);
+else applyDraft(PinePiProtocol.PRESETS.text);
 renderHistory();
 document.getElementById('clearHistory').addEventListener('click', () => { saveHistory([]); renderHistory(); });
 
@@ -891,35 +999,37 @@ document.getElementById('copyPayload').addEventListener('click', async () => {
 });
 sendBtn.addEventListener('click', async () => {
   let request;
-  const url = apiUrlInput.value.trim();
-  const token = tokenInput.value.trim();
+  let asset;
   try {
-    if (!url) throw new Error('Fill in the Mid API URL in connection settings.');
-    const endpoint = new URL(url);
-    if (!['https:', 'http:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.hash || !/^\/api\/send\/?$/.test(endpoint.pathname)) {
-      throw new Error('Use the Broadcast Mid /api/send endpoint.');
+    const connection = connectionSettings();
+    publishInFlight = true;
+    refreshUploadActions();
+    if (kindInput.value !== 'TEXT') await uploadLocalMedia();
+    request = PinePiProtocol.buildRequest(readDraft(), messageIdentity, connection.targets);
+    asset = kindInput.value === 'TEXT' ? null : currentAsset();
+    statusEl.className = 'status';
+    refreshUploadActions();
+    const response = await fetch(connection.url, { method: 'POST', redirect: 'error',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${connection.token}` }, body: JSON.stringify(request) });
+    if (!response.ok) {
+      if (asset && [404, 410].includes(response.status) && uploadedMedia?.media_id === asset.media_id) {
+        uploadedMedia = null;
+        uploadedContext = '';
+      }
+      throw new Error(`${response.status} ${await response.text()}`);
     }
-    if (!token) throw new Error('Fill in a Producer Token in connection settings.');
-    request = PinePiProtocol.buildRequest(readDraft(), messageIdentity, readTargets());
-  } catch (error) { showStatus('error', error.message); return; }
-  sendBtn.disabled = true;
-  sendBtn.textContent = 'Sending...';
-  statusEl.className = 'status';
-  try {
-    const response = await fetch(url, { method: 'POST', redirect: 'error',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(request) });
-    if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
     const result = await response.json();
-    showStatus('success', `Mid accepted ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'}). This does not confirm terminal playback.`);
+    showStatus('success', `Mid accepted ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'}). The Hub handles media caching and TTS; this does not confirm playback.`);
     const list = getHistory().filter(record => record.event?.id !== request.event.id);
-    list.unshift({ event: request.event, time: new Date().toISOString() });
+    list.unshift({ event: request.event, targets: request.targets, uploadedMedia: asset, time: new Date().toISOString() });
     saveHistory(list);
     renderHistory();
   } catch (error) {
-    showStatus('error', `Send failed: ${error.message}. Retry unchanged to keep the same message ID.`);
+    showStatus('error', error.name === 'AbortError' ? 'Upload cancelled or timed out.' : `Send failed: ${error.message}`);
   } finally {
-    sendBtn.disabled = false;
-    sendBtn.textContent = 'Send message';
+    publishInFlight = false;
+    refreshUploadActions();
+    renderPreview();
   }
 });
 function showStatus(type, message) {

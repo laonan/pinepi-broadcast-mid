@@ -459,26 +459,43 @@ def validate_media(path, max_image_pixels=16000000):
             raise
         except Exception:
             fail(415, "Invalid image")
+    if magic.startswith(b"ID3") or (len(magic) >= 2 and magic[0] == 0xff and magic[1] & 0xe0 == 0xe0):
+        result = probe_media(path)
+        streams = result.get("streams", [])
+        audio = [stream for stream in streams if stream.get("codec_type") == "audio"]
+        if result.get("format", {}).get("format_name") != "mp3" or len(audio) != 1 or audio[0].get("codec_name") != "mp3":
+            fail(415, "Only MP3 audio is supported")
+        for stream in streams:
+            if stream.get("codec_type") == "audio":
+                continue
+            if not (stream.get("codec_type") == "video" and stream.get("codec_name") in ("mjpeg", "png")
+                    and stream.get("disposition", {}).get("attached_pic") == 1):
+                fail(415, "Unsupported MP3 stream")
+        return "audio/mpeg"
     if magic[4:8] == b"ftyp":
         if magic[8:12] not in (b"isom", b"iso2", b"iso3", b"iso4", b"iso5", b"iso6", b"mp41", b"mp42", b"avc1", b"dash", b"M4V ", b"MSNV"):
             fail(415, "Unsupported MP4 container brand")
-        try:
-            probe = subprocess.run(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries",
-                                    "format=format_name:stream=codec_type,codec_name", "-of", "json", str(path)],
-                                   capture_output=True, timeout=15, check=True)
-            if probe.stderr.strip():
-                fail(415, "Invalid MP4 stream")
-            result = json.loads(probe.stdout)
-            streams = result.get("streams", [])
-            if "mp4" not in result.get("format", {}).get("format_name", "").split(","):
-                fail(415, "Expected MP4 container")
-            if not any(s.get("codec_type") == "video" for s in streams):
-                fail(415, "MP4 requires a video stream")
-            if any((s.get("codec_type"), s.get("codec_name")) not in (("video", "h264"), ("audio", "aac")) for s in streams):
-                fail(415, "MP4 supports H.264 video and optional AAC audio only")
-            return "video/mp4"
-        except FileNotFoundError:
-            fail(503, "MP4 validation unavailable: install ffprobe")
-        except (subprocess.SubprocessError, ValueError):
-            fail(415, "Invalid or unsupported MP4")
-    fail(415, "Only JPEG, PNG and H.264/AAC MP4 supported")
+        result = probe_media(path)
+        streams = result.get("streams", [])
+        if "mp4" not in result.get("format", {}).get("format_name", "").split(","):
+            fail(415, "Expected MP4 container")
+        if not any(stream.get("codec_type") == "video" for stream in streams):
+            fail(415, "MP4 requires a video stream")
+        if any((stream.get("codec_type"), stream.get("codec_name")) not in (("video", "h264"), ("audio", "aac")) for stream in streams):
+            fail(415, "MP4 supports H.264 video and optional AAC audio only")
+        return "video/mp4"
+    fail(415, "Only JPEG, PNG, MP3 and H.264/AAC MP4 supported")
+
+
+def probe_media(path):
+    try:
+        probe = subprocess.run(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries",
+                                "format=format_name:stream=codec_type,codec_name:stream_disposition=attached_pic", "-of", "json", str(path)],
+                               capture_output=True, timeout=15, check=True)
+        if probe.stderr.strip():
+            fail(415, "Invalid media stream")
+        return json.loads(probe.stdout)
+    except FileNotFoundError:
+        fail(503, "Audio/video validation unavailable: install ffprobe")
+    except (subprocess.SubprocessError, ValueError):
+        fail(415, "Invalid or unsupported audio/video")

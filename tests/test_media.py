@@ -385,3 +385,100 @@ def test_producer_token_rotation_preserves_asset_permissions_and_quotas(client, 
     server.MEDIA = MediaStore(store_cfg)
     assert server.MEDIA.rates == before_rate
     assert upload(client, targets='a', token='rotated-producer').status_code == 429
+
+
+def test_mid_forwards_hub_tts_submission_without_injecting_speech(client):
+    event = {'type': 'home.message', 'version': 2, 'id': 'hub-tts-submission', 'source': 'Web console',
+             'created_at': '2026-10-31T14:02:44.412Z', 'kind': 'TEXT', 'text_mode': 'TTS', 'text': '早上好。'}
+    with client.websocket_connect('/ws/') as ws:
+        ws.send_json({'device': 'a', 'token': 'device-a'})
+        response = client.post('/api/send', headers=auth(), json={'targets': ['a'], 'event': event})
+        assert response.status_code == 200
+        received = ws.receive_json()
+        assert received['event'] == event
+        assert 'speech' not in received['event']
+
+
+def test_mp3_upload_download_and_format_validation(client, tmp_path):
+    path = tmp_path / 'sample.mp3'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.2', '-c:a', 'libmp3lame', str(path)], check=True)
+    response = upload(client, targets='a', data=path.read_bytes())
+    assert response.status_code == 201, response.text
+    media = response.json()
+    assert media['mime_type'] == 'audio/mpeg'
+    assert media['sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert client.get(ticket(client, media).json()['url'], headers=auth('device-a')).content == path.read_bytes()
+    assert upload(client, targets='a', data=b'ID3' + b'fake audio data' * 30).status_code == 415
+    aac = tmp_path / 'other.aac'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.2', '-c:a', 'aac', str(aac)], check=True)
+    assert upload(client, targets='a', data=aac.read_bytes()).status_code == 415
+
+
+@pytest.mark.parametrize('kind', ['IMAGE', 'AUDIO', 'VIDEO'])
+def test_uploaded_media_hub_cache_ack_and_mid_cleanup(client, tmp_path, monkeypatch, kind):
+    """Optional two-repository integration; no remote sockets or real credentials."""
+    source = os.environ.get('PINEPI_HUB_SOURCE')
+    if not source:
+        pytest.skip('Set PINEPI_HUB_SOURCE to the companion Hub src directory')
+    monkeypatch.syspath_prepend(source)
+    from email.message import Message
+    from unittest.mock import AsyncMock
+    from urllib.error import HTTPError
+    from pinepi_hub.app import create_app
+    from pinepi_hub.broadcast_mid import BroadcastMid
+    from pinepi_hub.link_test import LinkTest
+    from pinepi_hub.mid_media import MidMediaCache
+    from pinepi_hub.notifications import NotificationStore
+    import asyncio
+    if kind == 'IMAGE':
+        content = png()
+    else:
+        path = tmp_path / ('file.mp3' if kind == 'AUDIO' else 'file.mp4')
+        generation = ['-f','lavfi','-i','sine=frequency=440:duration=0.2','-c:a','libmp3lame'] if kind == 'AUDIO' else ['-f','lavfi','-i','color=c=blue:s=32x32:d=0.2','-c:v','libx264','-pix_fmt','yuv420p']
+        subprocess.run(['ffmpeg','-v','error',*generation,str(path)], check=True)
+        content = path.read_bytes()
+    response = upload(client, targets='a', data=content)
+    assert response.status_code == 201, response.text
+    media = response.json()
+    protocol = str(Path(__file__).resolve().parents[1] / 'examples/web/message-protocol.js')
+    js = f"const P=require({json.dumps(protocol)}); const kind=process.argv[2]; process.stdout.write(JSON.stringify(P.buildRequest({{...P.PRESETS[kind.toLowerCase()],severity:'CRITICAL',uploadedMedia:JSON.parse(process.argv[1])}},{{id:'integration-'+kind,createdAt:'2026-10-31T14:00:00Z'}},['a'])));"
+    published = client.post('/api/send',headers=auth(),json=json.loads(subprocess.run(['node','-e',js,json.dumps(media),kind],text=True,capture_output=True,check=True).stdout))
+    assert published.status_code == 200, published.text
+    envelope = server.MEDIA.pending('a')[0]
+    hub_config = tmp_path/'mid-config.json'
+    hub_config.write_text(json.dumps({'url':'wss://mid.example.com/ws/','device':'a','token':'device-a'}))
+    link = LinkTest('d'*40,'c'*40,trusted_lan=True)
+    link.notifications = NotificationStore(tmp_path/'pending.json')
+    directory = tmp_path/'hub-media';directory.mkdir()
+    cache = MidMediaCache(hub_config,directory,'http://192.168.1.2:8766/media/',link)
+    class Response(io.BytesIO):
+        def __init__(self, body, code, content_type):
+            super().__init__(body);self.status=code;self.headers=Message();self.headers['Content-Type']=content_type
+    def open_(request,timeout):
+        response=client.request(request.get_method(),request.full_url,headers=dict(request.header_items()),content=request.data)
+        if response.status_code>=400:
+            raise HTTPError(request.full_url,response.status_code,'request failed',{},io.BytesIO(response.content))
+        return Response(response.content,response.status_code,response.headers['content-type'])
+    cache.opener.open=open_
+    ws=AsyncMock()
+    async def acknowledge(raw):
+        confirmation=json.loads(raw)
+        assert confirmation['type']=='media.cached'
+        assert len(NotificationStore(link.notifications.path).messages)==1
+        assert next(directory.glob('mid-*')).read_bytes()==content
+        confirmed=client.post('/api/media/'+media['media_id']+'/cached',headers=auth('device-a'),json=confirmation)
+        assert confirmed.status_code==200
+    ws.send.side_effect=acknowledge
+    receiver=BroadcastMid('unused',link.publish_mid_notification,media_cache=cache)
+    asyncio.run(receiver.handle(ws,json.dumps(envelope)))
+    assert receiver.received==1
+    saved=link.notifications.messages[0]
+    assert saved['severity']=='CRITICAL' and saved['media']['mime_type']==media['mime_type']
+    assert set(saved['media'])=={'url','mime_type'}
+    server.MEDIA.assets[media['media_id']]['completed_at']-=2
+    server.MEDIA.cleanup()
+    assert not (server.MEDIA.root/media['media_id']/'content').exists()
+    with TestClient(create_app(link_test=link,media_directory=directory)) as hub:
+        local='/media/'+saved['media']['url'].rsplit('/',1)[1]
+        assert hub.get(local).content==content
+        assert hub.get(local,headers={'Range':'bytes=0-9'}).status_code==206

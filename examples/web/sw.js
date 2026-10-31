@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msg-push-v4';
+const CACHE_NAME = 'msg-push-v6';
 const ASSETS = ['./', 'index.html', 'message-protocol.js', 'manifest.json'];
 
 self.addEventListener('install', e => {
