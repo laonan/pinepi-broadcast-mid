@@ -88,3 +88,15 @@ test('common field lengths, identity and request byte cap are enforced', () => {
   assert.throws(() => P.buildRequest(draft(), identity, ['x'.repeat(65536)]), /64 KiB/);
   assert.deepEqual(P.buildRequest(draft(), identity, ['hub', 'hub']), P.buildRequest(draft(), identity, ['hub']));
 });
+
+
+test('ordinary device messages preserve the original epaper/speaker protocol without Hub fields', () => {
+  for (const playNow of [false, true]) {
+    const request = P.buildRequest({ ...draft('IMAGE'), deliveryMode: 'DIRECT', title: ' Hello ', text: ' World ', playNow }, null, ['epaper', 'speaker']);
+    assert.deepEqual(request, { targets: ['epaper', 'speaker'], event: { title: 'Hello', content: 'World', play_now: playNow ? 1 : 0 } });
+  }
+  for (const changes of [{ title: '' }, { text: '' }]) {
+    assert.throws(() => P.buildRequest({ deliveryMode: 'DIRECT', title: 'Hello', text: 'World', ...changes }, null, ['epaper']), /cannot be empty/);
+  }
+  assert.throws(() => P.buildRequest({ deliveryMode: 'DIRECT', title: 'Hello', text: 'x'.repeat(65536) }, null, ['epaper']), /64 KiB/);
+});

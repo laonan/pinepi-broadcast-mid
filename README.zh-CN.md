@@ -110,14 +110,14 @@ curl https://mid.example.com/api/send -H "Authorization: Bearer $PRODUCER_TOKEN"
 
 `targets:["*"]` 选择 Producer 有权限的已配置设备。没有 `event` 的旧请求仍包装为 `{"event": body}`。普通文本离线缓冲保存在内存，每设备最多 200 条、2 MiB；私有媒体投递会持久化。
 
-[网页示例](examples/web/index.html)提供四种消息类型：TEXT、IMAGE、AUDIO、VIDEO。**严重程度独立于类型**，NORMAL / CRITICAL 适用于任意一种消息（需 Hub/终端 0.8.4+），不是第五种类型，切换示例时也会保留严重程度。文本可选 PRIVATE / TTS；TTS 完全由 Hub 合成，网页只提交正文、不带 `speech`，不上传文本音频，也不提供朗读 URL 输入框，Mid 仅转发请求。
+[网页示例](examples/web/index.html)提供“普通设备”和“Hub v2”两种消息格式。普通设备使用原有 `title` / `content` / `play_now` 格式，供 epaper、speaker 等设备直接订阅 Mid，无需 Hub；墨水屏图片使用下方独立裁剪发送入口。请按接收端协议选择格式，设备 ID 不决定是否经过 Hub。`delivered` 只表示 WebSocket 写入成功，不代表设备识别、显示或播放。Hub v2 提供四种消息类型：TEXT、IMAGE、AUDIO、VIDEO。**严重程度独立于类型**，NORMAL / CRITICAL 适用于任意一种消息（需 Hub/终端 0.8.4+），不是第五种类型，切换示例时也会保留严重程度。文本可选 PRIVATE / TTS；TTS 完全由 Hub 合成，网页只提交正文、不带 `speech`，不上传文本音频，也不提供朗读 URL 输入框，Mid 仅转发请求。
 
 图片、音频和视频选择本地 JPEG/PNG（最多 8 MiB）、MP3（16 MiB）或 H.264/AAC MP4（100 MiB）。可先点击 Upload file 创建资产，或直接 Upload & send 自动先上传再发布。表单按 targets 在前、file 在后的顺序上传，使用服务端校验返回的 MIME、大小、哈希和资产 ID，通过 `media_id` 发布，不再预填不存在的媒体 URL。上传提供进行中提示和取消按钮。更换文件、类型、目标或连接后需重新上传，修改严重程度或标题可复用资产；发布失败时，只要资产仍可用，就可重用已完成上传。历史仅保存资产元数据，不保存文件字节、票据或 Device Token，媒体不可用时需要重新上传。
 
 配套 Hub 需要包含 Mid 私有媒体缓存功能，并使用原有 `--media-directory`、`--media-base-url` 参数。Hub 使用自己的 Device Token 下载，校验大小/哈希，原子缓存，持久保存改写为局域网 URL 的消息后，才发送 `media.cached`；Mid 清理不删除 Hub 副本。上传媒体缓存默认 512 MiB，可用 `--media-cache-bytes` 调整；容量不足会拒绝新下载，不自动删除历史可能引用的文件。音视频主体仍由用户手动播放，独立墨水屏裁剪功能保留。重试保持 ID 并会去重，编辑消息或点击 New ID 可创建新消息；两个目标输入框继续提供历史设备快捷按钮。
 
 
-建议通过 Nginx 将静态页面托管在 Mid 同源，或由代理配置明确可信来源的 CORS；独立域名页面发送 Bearer 请求需要跨域许可。连接设置及近期消息仍保存在浏览器 localStorage。前端协议测试：`node --test tests/test_web_protocol.cjs`（Node 18+）。
+建议通过 Nginx 将静态页面托管在 Mid 同源，或由代理配置明确可信来源的 CORS；独立域名页面发送 Bearer 请求需要跨域许可。连接设置及近期消息仍保存在浏览器 localStorage。前端协议测试：`node --test tests/test_web_protocol.cjs tests/test_web_composer.cjs`（Node 18+）。
 
 设备连接 `wss://mid.example.com/ws/` 后，五秒内发送 `{"device":"speaker","token":"DEVICE_TOKEN"}`。收到 `{"type":"ping"}` 后回复 `{"type":"pong"}`。新连接替换同设备旧连接。另见 [Python 订阅示例](examples/subscribe_demo.py) 和 [网页演示](examples/web/index.html)。
 

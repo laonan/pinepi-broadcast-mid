@@ -436,20 +436,28 @@ textarea { resize: vertical; min-height: 80px; }
     </div>
   </div>
 
-  <!-- PinePi Home v2 Message Form -->
+  <!-- Ordinary device and Hub message form -->
   <div class="card" id="messageCard">
-    <div class="card-title">PinePi Home · v2 message examples</div>
-    <p class="hint">Choose a message type and severity. Upload a local file for image, audio or video messages.
+    <div class="card-title">Send message · 发送消息</div>
+    <div class="form-group">
+      <label for="deliveryMode">Message format · 消息格式</label>
+      <select id="deliveryMode">
+        <option value="DIRECT">普通设备 · epaper / speaker（无需 Hub）</option>
+        <option value="HUB">PinePi Home · Hub v2</option>
+      </select>
+      <p class="hint" id="deliveryHint"></p>
+    </div>
+    <p class="hint" data-hub-only>Choose a message type and severity. Upload a local file for image, audio or video messages.
       <a href="https://github.com/laonan/pinepi-thinksmart-view/blob/main/docs/MESSAGE_PROTOCOL.zh-CN.md" target="_blank" rel="noopener noreferrer">Protocol / 协议</a>
     </p>
-    <div class="preset-list" aria-label="Message examples">
+    <div class="preset-list" data-hub-only aria-label="Message examples">
       <button type="button" class="preset-btn" data-preset="text">Text 文本</button>
       <button type="button" class="preset-btn" data-preset="image">Image 图片</button>
       <button type="button" class="preset-btn" data-preset="audio">Audio 音频</button>
       <button type="button" class="preset-btn" data-preset="video">Video 视频</button>
     </div>
     <div class="form-group">
-      <label for="devices">Target Hubs / devices (comma-separated, * for all permitted)</label>
+      <label for="devices">Target devices (comma-separated, * for all permitted)</label>
       <input type="text" id="devices" placeholder="* or speaker,screen">
       <p class="hint">Use device IDs from the devices configuration keys, not their descriptions.</p>
       <div class="device-history" data-device-history="devices" hidden>
@@ -457,7 +465,7 @@ textarea { resize: vertical; min-height: 80px; }
         <div class="device-history-list" aria-label="Previously entered target devices"></div>
       </div>
     </div>
-    <div class="form-grid">
+    <div class="form-grid" data-hub-only>
       <div class="form-group">
         <label for="messageKind">Message type</label>
         <select id="messageKind">
@@ -476,8 +484,8 @@ textarea { resize: vertical; min-height: 80px; }
         </select>
       </div>
     </div>
-    <p class="hint" id="severityHint"></p>
-    <div class="form-group">
+    <p class="hint" id="severityHint" data-hub-only></p>
+    <div class="form-group" data-hub-only>
       <label for="source">Source 来源 (required)</label>
       <input type="text" id="source" maxlength="100" placeholder="家庭消息">
     </div>
@@ -486,7 +494,7 @@ textarea { resize: vertical; min-height: 80px; }
       <input type="text" id="title" maxlength="200" placeholder="Message title">
     </div>
     <div id="textFields">
-      <div class="form-group">
+      <div class="form-group" data-hub-only>
         <label for="textMode">Text mode</label>
         <select id="textMode" aria-describedby="modeHint">
           <option value="PRIVATE">PRIVATE · Display privately, fixed arrival notice</option>
@@ -501,6 +509,9 @@ textarea { resize: vertical; min-height: 80px; }
           <input type="checkbox" id="sameAsTitle">
           <span>Same as title</span>
         </label>
+      </div>
+      <div class="form-group" id="directPlayback">
+        <label><input type="checkbox" id="playNow"> Play immediately · speaker 立即播放</label>
       </div>
       <p class="hint" id="speechHint" hidden>TTS is generated and cached by the Hub from the text. Mid only relays the request. No speech URL or media upload is needed for text messages.</p>
     </div>
@@ -517,7 +528,7 @@ textarea { resize: vertical; min-height: 80px; }
       <progress id="mediaUploadProgress" max="1" hidden aria-label="Media upload progress"></progress>
       <p class="hint" id="mediaUploadInfo" role="status" aria-live="polite">Choose a local file. Send will upload it first, then publish the message.</p>
     </div>
-    <div class="form-group" style="margin-top:16px">
+    <div class="form-group" data-hub-only style="margin-top:16px">
       <label for="messageId">Message ID</label>
       <div class="id-row">
         <input type="text" id="messageId" readonly>
@@ -587,7 +598,7 @@ textarea { resize: vertical; min-height: 80px; }
 
 <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
 
-<script src="message-protocol.js"></script>
+<script src="message-protocol.js?v=20261103-direct-1"></script>
 <script>
 // --- Theme ---
 const themeButtons = document.querySelectorAll('.theme-btn');
@@ -720,6 +731,8 @@ contentInput.addEventListener('input', () => {
 });
 
 // --- Protocol-driven message composer ---
+const deliveryModeInput = document.getElementById('deliveryMode');
+const playNowInput = document.getElementById('playNow');
 const kindInput = document.getElementById('messageKind');
 const severityInput = document.getElementById('severity');
 const sourceInput = document.getElementById('source');
@@ -751,7 +764,7 @@ function newIdentity() {
 }
 
 function readDraft() {
-  return { kind: kindInput.value, severity: severityInput.value, source: sourceInput.value,
+  return { deliveryMode: deliveryModeInput.value, playNow: playNowInput.checked, kind: kindInput.value, severity: severityInput.value, source: sourceInput.value,
     title: titleInput.value, text: contentInput.value, textMode: textModeInput.value,
     uploadedMedia: uploadedContext === uploadContext() ? uploadedMedia : null };
 }
@@ -761,11 +774,19 @@ function readTargets() {
 }
 
 function updateFields() {
+  const direct = deliveryModeInput.value === 'DIRECT';
+  if (direct) kindInput.value = 'TEXT';
+  document.querySelectorAll('[data-hub-only]').forEach(element => { element.hidden = direct; });
+  document.getElementById('directPlayback').hidden = !direct;
+  document.querySelector('label[for="title"]').textContent = direct ? 'Title 标题 (required)' : 'Title 标题 (optional)';
+  document.getElementById('deliveryHint').textContent = direct
+    ? '直接发送文本给原有墨水屏和音箱，无需 Hub。墨水屏图片请使用下方专用入口。'
+    : '适用于 PinePi Home Hub，支持文本朗读及图片、音频、视频。目标设备须为兼容的 Hub。';
   const kind = kindInput.value;
   const isText = kind === 'TEXT';
   document.getElementById('textFields').hidden = !isText;
   document.getElementById('mediaFields').hidden = isText;
-  document.getElementById('speechHint').hidden = !isText || textModeInput.value !== 'TTS';
+  document.getElementById('speechHint').hidden = direct || !isText || textModeInput.value !== 'TTS';
   document.getElementById('modeHint').textContent = textModeInput.value === 'PRIVATE'
     ? 'PRIVATE: show the text and play only the fixed local notice. Never send the title or text to a third-party speech service.'
     : 'TTS: the Hub generates narration from the text. Mid does not synthesize speech.';
@@ -795,15 +816,26 @@ function updateFields() {
   refreshUploadActions();
 }
 
+// HTML and the shared script must agree before previewing, copying or sending.
+// An old cached script otherwise silently treats ordinary-device drafts as Hub v2.
+function buildComposerRequest(targets) {
+  if (globalThis.PinePiProtocol?.COMPOSER_VERSION !== '20261103-direct-1') {
+    throw new Error('页面与消息脚本版本不一致，请完整更新网页文件并强制刷新。');
+  }
+  return PinePiProtocol.buildRequest(readDraft(), messageIdentity, targets);
+}
+
 function renderPreview() {
   try {
-    previewEl.textContent = JSON.stringify(PinePiProtocol.buildRequest(readDraft(), messageIdentity, readTargets()), null, 2);
+    previewEl.textContent = JSON.stringify(buildComposerRequest(readTargets()), null, 2);
   } catch (error) {
     previewEl.textContent = `Complete the message to preview JSON: ${error.message}`;
   }
 }
 
 function applyDraft(draft, identity) {
+  deliveryModeInput.value = draft.deliveryMode || 'DIRECT';
+  playNowInput.checked = !!draft.playNow;
   kindInput.value = draft.kind || 'TEXT';
   severityInput.value = draft.severity === undefined ? 'NORMAL' : draft.severity;
   sourceInput.value = draft.source || 'Web demo';
@@ -834,7 +866,7 @@ document.getElementById('messageCard').addEventListener('input', () => {
   renderPreview();
 });
 document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click', () => {
-  applyDraft({ ...PinePiProtocol.PRESETS[button.dataset.preset], severity: severityInput.value });
+  applyDraft({ ...PinePiProtocol.PRESETS[button.dataset.preset], deliveryMode: 'HUB', severity: severityInput.value });
 }));
 document.getElementById('newMessageId').addEventListener('click', () => { newIdentity(); renderPreview(); });
 // Sync may populate a second field during checkbox change; preview the final values.
@@ -937,7 +969,7 @@ function getHistory() {
 }
 function saveHistory(list) { localStorage.setItem('msgHistory', JSON.stringify(list.slice(0, 20))); }
 function eventDraft(event, asset) {
-  return { kind: event.kind, severity: event.severity || '', source: event.source, title: event.title,
+  return { deliveryMode: 'HUB', kind: event.kind, severity: event.severity || '', source: event.source, title: event.title,
     text: event.text, textMode: event.text_mode, uploadedMedia: asset || null };
 }
 function restoreRecord(record) {
@@ -952,7 +984,7 @@ function restoreRecord(record) {
       ? 'TTS now uses the Hub only. The old speech URL was removed and a new ID assigned.'
       : 'Choose and upload the local media file for this message. A new ID has been assigned.');
   } else {
-    applyDraft({ kind: 'TEXT', severity: 'NORMAL', source: 'Web demo', title: record.title, text: record.content, textMode: 'PRIVATE' });
+    applyDraft({ deliveryMode: 'DIRECT', title: record.event?.title ?? record.title, text: record.event?.content ?? record.content, playNow: record.event?.play_now ?? record.play_now });
   }
 }
 function renderHistory() {
@@ -974,10 +1006,10 @@ function renderHistory() {
     item.style.cssText = 'display:block;width:100%;text-align:left;background:none;color:inherit;border-top:0;border-left:0;border-right:0;font:inherit';
     const title = document.createElement('div');
     title.className = 'history-title';
-    title.textContent = `${event.kind || 'TEXT'} · ${event.title || record.title || '(Untitled)'}`;
+    title.textContent = `${event.version === 2 ? 'Hub · ' + event.kind : '普通设备'} · ${event.title || record.title || '(Untitled)'}`;
     const content = document.createElement('div');
     content.className = 'history-content';
-    content.textContent = event.text || event.media?.url || record.content || '';
+    content.textContent = event.text || event.content || event.media?.url || record.content || '';
     item.append(title, content);
     item.addEventListener('click', () => { restoreRecord(record); titleInput.focus(); });
     el.append(item);
@@ -992,7 +1024,7 @@ document.getElementById('clearHistory').addEventListener('click', () => { saveHi
 // --- Preview / send ---
 document.getElementById('copyPayload').addEventListener('click', async () => {
   try {
-    const request = PinePiProtocol.buildRequest(readDraft(), messageIdentity, readTargets());
+    const request = buildComposerRequest(readTargets());
     await navigator.clipboard.writeText(JSON.stringify(request, null, 2));
     showStatus('success', 'JSON copied.');
   } catch (error) { showStatus('error', `Copy failed: ${error.message}`); }
@@ -1005,7 +1037,7 @@ sendBtn.addEventListener('click', async () => {
     publishInFlight = true;
     refreshUploadActions();
     if (kindInput.value !== 'TEXT') await uploadLocalMedia();
-    request = PinePiProtocol.buildRequest(readDraft(), messageIdentity, connection.targets);
+    request = buildComposerRequest(connection.targets);
     asset = kindInput.value === 'TEXT' ? null : currentAsset();
     statusEl.className = 'status';
     refreshUploadActions();
@@ -1019,8 +1051,10 @@ sendBtn.addEventListener('click', async () => {
       throw new Error(`${response.status} ${await response.text()}`);
     }
     const result = await response.json();
-    showStatus('success', `Mid accepted ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'}). The Hub handles media caching and TTS; this does not confirm playback.`);
-    const list = getHistory().filter(record => record.event?.id !== request.event.id);
+    showStatus('success', `Mid accepted ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'}). ${request.event.version === 2
+      ? 'Hub v2 消息已提交；不代表终端已显示或播放。'
+      : '普通设备消息已提交（无需 Hub）；delivered 仅表示连接写入成功，不代表设备已显示或播放。'}`);
+    const list = getHistory().filter(record => !request.event.id || record.event?.id !== request.event.id);
     list.unshift({ event: request.event, targets: request.targets, uploadedMedia: asset, time: new Date().toISOString() });
     saveHistory(list);
     renderHistory();
@@ -1193,7 +1227,11 @@ imgSendBtn.addEventListener('click', async () => {
     }
 
     const result = await res.json();
-    showImgStatus('success', `Sent successfully ✓ (delivered: ${result.delivered ?? '-'}, ${result.size_bytes} bytes)`);
+    if (result.delivered === 0) {
+      showImgStatus('error', '未投递：目标设备未连接或写入失败。墨水屏图片不保留离线副本，请确认设备在线后重发。');
+    } else {
+      showImgStatus('success', `墨水屏图片已直接投递 ✓ (delivered: ${result.delivered ?? '-'}, ${result.size_bytes} bytes)。无需 Hub；不代表设备已刷新屏幕。`);
+    }
   } catch (e) {
     showImgStatus('error', `Send failed: ${e.message}`);
   } finally {
@@ -1210,7 +1248,7 @@ function showImgStatus(type, msg) {
 
 // --- Service Worker ---
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 }
 </script>
 </body>

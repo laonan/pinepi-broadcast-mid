@@ -1,4 +1,4 @@
-/* Producer submissions to the Hub via Mid. Hub-generated TTS omits speech here;
+/* Ordinary device messages and Hub v2 submissions via Mid. Hub TTS omits speech here;
  * the Hub adds real audio before validating/delivering strict terminal v2 JSON. */
 (function (root) {
   'use strict';
@@ -58,6 +58,14 @@
 
   function buildRequest(draft, identity, targets) {
     requireValue(Array.isArray(targets) && targets.length > 0 && targets.every(t => typeof t === 'string' && t.trim()), 'Enter at least one target device.');
+    if (draft.deliveryMode === 'DIRECT') {
+      const title = (draft.title || '').trim();
+      const content = (draft.text || '').trim();
+      requireValue(title && content, 'Title and content cannot be empty for ordinary devices.');
+      const request = { targets: [...new Set(targets)], event: { title, content, play_now: draft.playNow ? 1 : 0 } };
+      requireValue(new TextEncoder().encode(JSON.stringify(request)).length <= 65536, 'Request exceeds the Mid 64 KiB JSON limit.');
+      return request;
+    }
     const request = { targets: [...new Set(targets)], event: buildMessage(draft, identity) };
     if (draft.kind !== 'TEXT') request.media_id = draft.uploadedMedia.media_id;
     requireValue(new TextEncoder().encode(JSON.stringify(request)).length <= 65536, 'Request exceeds the Mid 64 KiB JSON limit.');
@@ -93,7 +101,7 @@
     return !asset || event.media?.url !== `mid://${asset.media_id}`;
   }
 
-  const api = { MIME, FILE_LIMITS, ACCEPT, PRESETS, validateUrl, validateFile, validateAsset, uploadEndpoint, buildMessage, buildRequest, needsHistoryRefresh };
+  const api = { COMPOSER_VERSION: '20261103-direct-1', MIME, FILE_LIMITS, ACCEPT, PRESETS, validateUrl, validateFile, validateAsset, uploadEndpoint, buildMessage, buildRequest, needsHistoryRefresh };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PinePiProtocol = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
