@@ -438,23 +438,23 @@ textarea { resize: vertical; min-height: 80px; }
 
   <!-- Ordinary device and Hub message form -->
   <div class="card" id="messageCard">
-    <div class="card-title">Send message · 发送消息</div>
+    <div class="card-title">Send message</div>
     <div class="form-group">
-      <label for="deliveryMode">Message format · 消息格式</label>
+      <label for="deliveryMode">Message format</label>
       <select id="deliveryMode">
-        <option value="DIRECT">普通设备 · epaper / speaker（无需 Hub）</option>
+        <option value="DIRECT">Direct devices · e-paper / speaker (no Hub required)</option>
         <option value="HUB">PinePi Home · Hub v2</option>
       </select>
       <p class="hint" id="deliveryHint"></p>
     </div>
     <p class="hint" data-hub-only>Choose a message type and severity. Upload a local file for image, audio or video messages.
-      <a href="https://github.com/laonan/pinepi-thinksmart-view/blob/main/docs/MESSAGE_PROTOCOL.zh-CN.md" target="_blank" rel="noopener noreferrer">Protocol / 协议</a>
+      <a href="https://github.com/laonan/pinepi-thinksmart-view/blob/main/docs/MESSAGE_PROTOCOL.zh-CN.md" target="_blank" rel="noopener noreferrer">Protocol</a>
     </p>
     <div class="preset-list" data-hub-only aria-label="Message examples">
-      <button type="button" class="preset-btn" data-preset="text">Text 文本</button>
-      <button type="button" class="preset-btn" data-preset="image">Image 图片</button>
-      <button type="button" class="preset-btn" data-preset="audio">Audio 音频</button>
-      <button type="button" class="preset-btn" data-preset="video">Video 视频</button>
+      <button type="button" class="preset-btn" data-preset="text">Text</button>
+      <button type="button" class="preset-btn" data-preset="image">Image</button>
+      <button type="button" class="preset-btn" data-preset="audio">Audio</button>
+      <button type="button" class="preset-btn" data-preset="video">Video</button>
     </div>
     <div class="form-group">
       <label for="devices">Target devices (comma-separated, * for all permitted)</label>
@@ -469,28 +469,28 @@ textarea { resize: vertical; min-height: 80px; }
       <div class="form-group">
         <label for="messageKind">Message type</label>
         <select id="messageKind">
-          <option value="TEXT">TEXT · 文本</option>
-          <option value="IMAGE">IMAGE · 图片</option>
-          <option value="AUDIO">AUDIO · 音频</option>
-          <option value="VIDEO">VIDEO · 视频</option>
+          <option value="TEXT">TEXT</option>
+          <option value="IMAGE">IMAGE</option>
+          <option value="AUDIO">AUDIO</option>
+          <option value="VIDEO">VIDEO</option>
         </select>
       </div>
       <div class="form-group">
         <label for="severity">Severity · all message types</label>
         <select id="severity" aria-describedby="severityHint">
-          <option value="NORMAL">NORMAL · 普通</option>
-          <option value="CRITICAL">CRITICAL · 严重</option>
+          <option value="NORMAL">NORMAL</option>
+          <option value="CRITICAL">CRITICAL</option>
           <option value="">Omit · before 0.8.4</option>
         </select>
       </div>
     </div>
     <p class="hint" id="severityHint" data-hub-only></p>
     <div class="form-group" data-hub-only>
-      <label for="source">Source 来源 (required)</label>
-      <input type="text" id="source" maxlength="100" placeholder="家庭消息">
+      <label for="source">Source (required)</label>
+      <input type="text" id="source" maxlength="100" placeholder="Home messages">
     </div>
     <div class="form-group">
-      <label for="title">Title 标题 (optional)</label>
+      <label for="title">Title (optional)</label>
       <input type="text" id="title" maxlength="200" placeholder="Message title">
     </div>
     <div id="textFields">
@@ -503,7 +503,7 @@ textarea { resize: vertical; min-height: 80px; }
         <p class="hint" id="modeHint"></p>
       </div>
       <div class="form-group">
-        <label for="content">Text 正文 (required)</label>
+        <label for="content">Text (required)</label>
         <textarea id="content" maxlength="8192" placeholder="Message text"></textarea>
         <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
           <input type="checkbox" id="sameAsTitle">
@@ -511,13 +511,13 @@ textarea { resize: vertical; min-height: 80px; }
         </label>
       </div>
       <div class="form-group" id="directPlayback">
-        <label><input type="checkbox" id="playNow"> Play immediately · speaker 立即播放</label>
+        <label><input type="checkbox" id="playNow"> Play immediately on speaker</label>
       </div>
       <p class="hint" id="speechHint" hidden>TTS is generated and cached by the Hub from the text. Mid only relays the request. No speech URL or media upload is needed for text messages.</p>
     </div>
     <div id="mediaFields" hidden>
       <div class="form-group">
-        <label for="mediaFile">Local media file 本地媒体文件</label>
+        <label for="mediaFile">Local media file</label>
         <input type="file" id="mediaFile" aria-describedby="mediaHint">
         <p class="hint" id="mediaHint"></p>
       </div>
@@ -550,7 +550,7 @@ textarea { resize: vertical; min-height: 80px; }
     <div class="card-title">Send Image to E-Paper (2.13" 250×122)</div>
     <div class="form-group">
       <label for="imgTargets">Target Devices (comma-separated, * for all)</label>
-      <input type="text" id="imgTargets" placeholder="* 或 epaper">
+      <input type="text" id="imgTargets" placeholder="* or epaper">
       <div class="device-history" data-device-history="imgTargets" hidden>
         <div class="device-history-label">Recent devices · click to fill</div>
         <div class="device-history-list" aria-label="Previously entered e-paper target devices"></div>
@@ -778,10 +778,10 @@ function updateFields() {
   if (direct) kindInput.value = 'TEXT';
   document.querySelectorAll('[data-hub-only]').forEach(element => { element.hidden = direct; });
   document.getElementById('directPlayback').hidden = !direct;
-  document.querySelector('label[for="title"]').textContent = direct ? 'Title 标题 (required)' : 'Title 标题 (optional)';
+  document.querySelector('label[for="title"]').textContent = direct ? 'Title (required)' : 'Title (optional)';
   document.getElementById('deliveryHint').textContent = direct
-    ? '直接发送文本给原有墨水屏和音箱，无需 Hub。墨水屏图片请使用下方专用入口。'
-    : '适用于 PinePi Home Hub，支持文本朗读及图片、音频、视频。目标设备须为兼容的 Hub。';
+    ? 'Send text directly to existing e-paper displays and speakers without a Hub. For e-paper images, use the dedicated form below.'
+    : 'For PinePi Home Hub: supports text-to-speech, images, audio and video. Target devices must be compatible Hubs.';
   const kind = kindInput.value;
   const isText = kind === 'TEXT';
   document.getElementById('textFields').hidden = !isText;
@@ -820,7 +820,7 @@ function updateFields() {
 // An old cached script otherwise silently treats ordinary-device drafts as Hub v2.
 function buildComposerRequest(targets) {
   if (globalThis.PinePiProtocol?.COMPOSER_VERSION !== '20261103-direct-1') {
-    throw new Error('页面与消息脚本版本不一致，请完整更新网页文件并强制刷新。');
+    throw new Error('The page and message script versions do not match. Update all web files and force-refresh the page.');
   }
   return PinePiProtocol.buildRequest(readDraft(), messageIdentity, targets);
 }
@@ -1006,7 +1006,7 @@ function renderHistory() {
     item.style.cssText = 'display:block;width:100%;text-align:left;background:none;color:inherit;border-top:0;border-left:0;border-right:0;font:inherit';
     const title = document.createElement('div');
     title.className = 'history-title';
-    title.textContent = `${event.version === 2 ? 'Hub · ' + event.kind : '普通设备'} · ${event.title || record.title || '(Untitled)'}`;
+    title.textContent = `${event.version === 2 ? 'Hub · ' + event.kind : 'Direct device'} · ${event.title || record.title || '(Untitled)'}`;
     const content = document.createElement('div');
     content.className = 'history-content';
     content.textContent = event.text || event.content || event.media?.url || record.content || '';
@@ -1052,8 +1052,8 @@ sendBtn.addEventListener('click', async () => {
     }
     const result = await response.json();
     showStatus('success', `Mid accepted ✓ (delivered: ${result.delivered ?? '-'}, buffered: ${result.buffered ?? '-'}). ${request.event.version === 2
-      ? 'Hub v2 消息已提交；不代表终端已显示或播放。'
-      : '普通设备消息已提交（无需 Hub）；delivered 仅表示连接写入成功，不代表设备已显示或播放。'}`);
+      ? 'Hub v2 message submitted; this does not confirm terminal display or playback.'
+      : 'Direct-device message submitted (no Hub required); delivered only confirms a successful connection write, not device display or playback.'}`);
     const list = getHistory().filter(record => !request.event.id || record.event?.id !== request.event.id);
     list.unshift({ event: request.event, targets: request.targets, uploadedMedia: asset, time: new Date().toISOString() });
     saveHistory(list);
@@ -1228,9 +1228,9 @@ imgSendBtn.addEventListener('click', async () => {
 
     const result = await res.json();
     if (result.delivered === 0) {
-      showImgStatus('error', '未投递：目标设备未连接或写入失败。墨水屏图片不保留离线副本，请确认设备在线后重发。');
+      showImgStatus('error', 'Not delivered: the target device is disconnected or the write failed. E-paper images are not stored for offline delivery. Confirm the device is online, then resend.');
     } else {
-      showImgStatus('success', `墨水屏图片已直接投递 ✓ (delivered: ${result.delivered ?? '-'}, ${result.size_bytes} bytes)。无需 Hub；不代表设备已刷新屏幕。`);
+      showImgStatus('success', `E-paper image delivered directly ✓ (delivered: ${result.delivered ?? '-'}, ${result.size_bytes} bytes). No Hub required; this does not confirm that the device has refreshed its display.`);
     }
   } catch (e) {
     showImgStatus('error', `Send failed: ${e.message}`);
